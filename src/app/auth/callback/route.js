@@ -7,20 +7,29 @@ export async function GET(request) {
   const code = requestUrl.searchParams.get('code');
 
   if (code) {
-    const cookieStore = cookies();
+    // Import cookies dinamis untuk kompatibilitas Next.js 16
+    const cookieStore = await cookies();
+
+    // Create response object early
+    const response = NextResponse.redirect(`${requestUrl.origin}/dashboard`);
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       {
         cookies: {
-          get(name) {
-            return cookieStore.get(name)?.value;
+          getAll() {
+            return cookieStore.getAll();
           },
-          set(name, value, options) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name, options) {
-            cookieStore.set({ name, value: '', ...options });
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              try {
+                cookieStore.set(name, value, options);
+              } catch {
+                // Handle server component case
+              }
+              response.cookies.set(name, value, options);
+            });
           },
         },
       }
@@ -50,7 +59,7 @@ export async function GET(request) {
       if (!existingProfile) {
         const { error: insertError } = await supabase.from('profiles').insert({
           id: userId,
-          username: user.user_metadata?.full_name || user.user_metadata?.name || 'User',
+          username: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
           full_name: user.user_metadata?.full_name || user.user_metadata?.name || '',
           avatar_url: user.user_metadata?.avatar_url || '',
           email: user.email || '',
@@ -69,7 +78,7 @@ export async function GET(request) {
             avatar_url: user.user_metadata?.avatar_url || existingProfile.avatar_url,
             full_name: user.user_metadata?.full_name || user.user_metadata?.name || existingProfile.full_name,
             username: user.user_metadata?.full_name || user.user_metadata?.name || existingProfile.username,
-            last_login: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           })
           .eq('id', userId);
 
@@ -78,6 +87,8 @@ export async function GET(request) {
         }
       }
     }
+
+    return response;
   }
 
   // Redirect pengguna ke Dashboard utama setelah berhasil login
