@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -14,8 +15,31 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-export default function Sidebar({ userProfile }) {
+export default function Sidebar({ userProfile: initialProfile }) {
   const pathname = usePathname();
+  const [profile, setProfile] = useState(initialProfile);
+
+  // Jika userProfile berubah (dari parent), update state
+  useEffect(() => {
+    if (initialProfile) {
+      setProfile(initialProfile);
+    } else {
+      // Fallback: ambil dari session/profile Supabase langsung
+      fetchProfile();
+    }
+  }, [initialProfile]);
+
+  const fetchProfile = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+      if (data) setProfile(data);
+    }
+  };
 
   const handleLogout = async () => {
     sessionStorage.removeItem('guild_master_passkey');
@@ -33,7 +57,7 @@ export default function Sidebar({ userProfile }) {
   ];
 
   // Tambah menu Admin jika user adalah Officer / GM
-  if (['guild_master', 'officer'].includes(userProfile?.role)) {
+  if (profile && ['guild_master', 'officer'].includes(profile?.role)) {
     navItems.push({ label: 'Admin Panel', href: '/admin', icon: ShieldCheck });
   }
 
@@ -78,12 +102,12 @@ export default function Sidebar({ userProfile }) {
       <div className="pt-4 border-t border-slate-800 space-y-3">
         <div className="flex items-center gap-3 px-2">
           <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
-            {userProfile?.username?.[0]?.toUpperCase() || 'U'}
+            {profile?.username?.[0]?.toUpperCase() || 'U'}
           </div>
           <div className="flex-1 overflow-hidden">
-            <p className="text-sm font-semibold text-slate-200 truncate">{userProfile?.username || 'Member'}</p>
+            <p className="text-sm font-semibold text-slate-200 truncate">{profile?.username || 'Member'}</p>
             <p className="text-xs text-amber-400 capitalize font-mono">
-              {userProfile?.role?.replace('_', ' ') || 'Member'}
+              {profile?.role?.replace('_', ' ') || 'Member'}
             </p>
           </div>
         </div>

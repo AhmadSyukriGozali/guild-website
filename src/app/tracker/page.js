@@ -2,97 +2,199 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { supabase } from '@/lib/supabase';
 import { Timer, CheckCircle2, Lock, Unlock, RefreshCw, AlertCircle, Plus } from 'lucide-react';
 
 export default function BossTrackerPage() {
-  // Mock profile (nanti otomatis tersambung ke Supabase Auth)
-  const [profile] = useState({
-    id: 'user-123',
-    username: 'Ahmad Syukri',
-    role: 'guild_master', // 'member', 'officer', 'guild_master'
-  });
+  const [profile, setProfile] = useState(null);
+  const [bosses, setBosses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [attendedBossIds, setAttendedBossIds] = useState(new Set());
 
-  // Sample data Boss Tracker
-  const [bosses, setBosses] = useState([
-    {
-      id: 'b1',
-      name: 'Nefarian The Red',
-      location: 'Volcano Peak Ch.1',
-      cooldownMinutes: 120,
-      nextSpawn: new Date(Date.now() + 15 * 60 * 1000), // 15 menit lagi
-      isLocked: false,
-      attendees: ['Ahmad Syukri', 'ShadowHunter', 'Valkyrie'],
-      hasAttended: true,
-    },
-    {
-      id: 'b2',
-      name: 'Lord Kazzak',
-      location: 'Blasted Lands Ch.2',
-      cooldownMinutes: 240,
-      nextSpawn: new Date(Date.now() + 85 * 60 * 1000), // 1 jam 25 menit lagi
-      isLocked: false,
-      attendees: ['Valkyrie'],
-      hasAttended: false,
-    },
-    {
-      id: 'b3',
-      name: 'Onyxia Dragon',
-      location: 'Onyxia Lair',
-      cooldownMinutes: 360,
-      nextSpawn: new Date(Date.now() - 10 * 60 * 1000), // Sudah spawn!
-      isLocked: true,
-      attendees: ['Ahmad Syukri', 'ShadowHunter', 'IronClad', 'MagePro'],
-      hasAttended: true,
-    },
-  ]);
+  // Ambil profile & data dari Supabase
+  useEffect(() => {
+    async function loadData() {
+      // Ambil session & profile
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (profileData) setProfile(profileData);
+      }
 
-  const isStaffOrGM = ['guild_master', 'officer'].includes(profile.role);
+      // Ambil daftar boss dari database
+      const { data: bossData, error: bossError } = await supabase
+        .from('boss_tracker')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (bossError) {
+        console.error('Error fetching bosses:', bossError.message);
+      } else if (bossData) {
+        // Ambil attendance untuk setiap boss
+        const bossesWithAttendees = await Promise.all(
+          bossData.map(async (boss) => {
+            // Ambil daftar peserta
+            const { data: attendees } = await supabase
+              .from('boss_attendance')
+              .select('user_id')
+              .eq('boss_id', boss.id);
+
+            // Ambil username dari profiles
+            let attendeeNames = [];
+            if (attendees && attendees.length > 0) {
+              const userIds = attendees.map(a => a.user_id);
+              const { data: attendeeProfiles } = await supabase
+                .from('profiles')
+                .select('username, ign, id')
+                .in('id', userIds);
+
+              if (attendeeProfiles) {
+                attendeeNames = attendeeProfiles.map(p => p.username || p.ign || 'Unknown');
+              }
+            }
+
+            // Cek apakah user sudah absen
+            const hasAttended = attendees?.some(a => a.user_id === session?.user?.id) || false;
+
+            return {
+              ...boss,
+              attendees: attendeeNames,
+              hasAttended,
+            };
+          })
+        );
+
+        setBosses(bossesWithAttendees);
+      }
+
+      setLoading(false);
+    }
+
+    loadData();
+  }, []);
+
+  const isStaffOrGM = profile && ['guild_master', 'officer'].includes(profile.role);
 
   // Function: Tekan Tombol HADIR (Self-Absen)
-  const handleAttendance = (bossId) => {
-    setBosses((prev) =>
-      prev.map((b) => {
-        if (b.id === bossId && !b.isLocked) {
-          if (b.hasAttended) {
-            // Cancel Absen
+  const handleAttendance = async (bossId) => {
+    if (!profile) return;
+
+    const boss = bosses.find(b => b.id === bossId);
+    if (!boss || boss.is_locked) return;
+
+    if (boss.hasAttended) {
+      // Cancel Absen — delete dari database
+      const { error } = await supabase
+        .from('boss_attendance')
+        .delete()
+        .eq('boss_id', bossId)
+        .eq('user_id', profile.id);
+
+      if (error) {
+        console.error('Error removing attendance:', error.message);
+        return;
+      }
+
+      // Update local state
+      setBosses((prev) =>
+        prev.map((b) => {
+          if (b.id === bossId) {
             return {
               ...b,
               hasAttended: false,
-              attendees: b.attendees.filter((name) => name !== profile.username),
+              attendees: b.attendees.filter((name) => name !== (profile.username || profile.ign)),
             };
-          } else {
-            // Tambah Absen
+          }
+          return b;
+        })
+      );
+    } else {
+      // Tambah Absen — insert ke database
+      const { error } = await supabase
+        .from('boss_attendance')
+        .insert({
+          boss_id: bossId,
+          user_id: profile.id,
+        });
+
+      if (error) {
+        console.error('Error adding attendance:', error.message);
+        return;
+      }
+
+      // Update local state
+      setBosses((prev) =>
+        prev.map((b) => {
+          if (b.id === bossId) {
             return {
               ...b,
               hasAttended: true,
-              attendees: [...b.attendees, profile.username],
+              attendees: [...b.attendees, profile.username || profile.ign || 'Unknown'],
             };
           }
-        }
-        return b;
-      })
-    );
+          return b;
+        })
+      );
+    }
   };
 
   // Function: Lock / Unlock Absen (Staff / GM Only)
-  const toggleLock = (bossId) => {
+  const toggleLock = async (bossId) => {
     if (!isStaffOrGM) return;
+    const boss = bosses.find(b => b.id === bossId);
+    if (!boss) return;
+
+    const newLockState = !boss.is_locked;
+    const { error } = await supabase
+      .from('boss_tracker')
+      .update({ is_locked: newLockState })
+      .eq('id', bossId);
+
+    if (error) {
+      console.error('Error toggling lock:', error.message);
+      return;
+    }
+
     setBosses((prev) =>
-      prev.map((b) => (b.id === bossId ? { ...b, isLocked: !b.isLocked } : b))
+      prev.map((b) => (b.id === bossId ? { ...b, is_locked: newLockState } : b))
     );
   };
 
   // Function: Mark Dead / Reset Cooldown (Staff / GM Only)
-  const handleMarkDead = (bossId, cooldownMinutes) => {
+  const handleMarkDead = async (bossId, cooldownMinutes) => {
     if (!isStaffOrGM) return;
     const newSpawn = new Date(Date.now() + cooldownMinutes * 60 * 1000);
+
+    const { error } = await supabase
+      .from('boss_tracker')
+      .update({
+        next_spawn: newSpawn.toISOString(),
+        is_locked: false,
+      })
+      .eq('id', bossId);
+
+    if (error) {
+      console.error('Error marking dead:', error.message);
+      return;
+    }
+
+    // Hapus semua attendance lama
+    await supabase
+      .from('boss_attendance')
+      .delete()
+      .eq('boss_id', bossId);
+
     setBosses((prev) =>
       prev.map((b) =>
         b.id === bossId
           ? {
               ...b,
-              nextSpawn: newSpawn,
-              isLocked: false,
+              next_spawn: newSpawn,
+              is_locked: false,
               attendees: [],
               hasAttended: false,
             }
@@ -100,6 +202,17 @@ export default function BossTrackerPage() {
       )
     );
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex">
+        <Sidebar userProfile={null} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">

@@ -1,17 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { supabase } from '@/lib/supabase';
 import { ShieldCheck, KeyRound, Lock, Globe, Save, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 export default function AdminPanelPage() {
-  const [profile] = useState({
-    username: 'Ahmad Syukri',
-    role: 'guild_master', // 'guild_master' atau 'officer'
-  });
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // State Pengaturan System
-  const [guildName, setGuildName] = useState('Valkyrie Alliance');
+  const [guildName, setGuildName] = useState('My Guild');
   const [currentPasskey, setCurrentPasskey] = useState('');
   const [newPasskey, setNewPasskey] = useState('');
   const [confirmPasskey, setConfirmPasskey] = useState('');
@@ -20,8 +19,40 @@ export default function AdminPanelPage() {
   // Status Feedback
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  // Ambil data profile & app_settings dari Supabase
+  useEffect(() => {
+    async function loadAdminData() {
+      // Ambil session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (profileData) setProfile(profileData);
+      }
+
+      // Ambil app_settings
+      const { data: settings } = await supabase
+        .from('app_settings')
+        .select('*')
+        .limit(1)
+        .single();
+
+      if (settings) {
+        setGuildName(settings.guild_name || 'My Guild');
+        setEmergencyLock(settings.emergency_lock || false);
+      }
+
+      setLoading(false);
+    }
+
+    loadAdminData();
+  }, []);
+
   // Handle Update Master Passkey
-  const handleUpdatePasskey = (e) => {
+  const handleUpdatePasskey = async (e) => {
     e.preventDefault();
     if (!newPasskey || !confirmPasskey) {
       setMessage({ type: 'error', text: 'Semua kolom passkey wajib diisi!' });
@@ -32,12 +63,76 @@ export default function AdminPanelPage() {
       return;
     }
 
-    // Simulasi simpan ke Supabase DB (Tabel app_settings)
+    // Simpan ke Supabase DB (Tabel app_settings)
+    const { error } = await supabase
+      .from('app_settings')
+      .update({
+        master_passkey_hash: newPasskey,
+        updated_at: new Date().toISOString(),
+        updated_by: profile?.id,
+      })
+      .eq('id', 1); // Hanya ada 1 baris app_settings
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Gagal menyimpan passkey: ' + error.message });
+      return;
+    }
+
     setMessage({ type: 'success', text: 'Master Passkey Pengurus berhasil diperbarui!' });
     setCurrentPasskey('');
     setNewPasskey('');
     setConfirmPasskey('');
   };
+
+  // Handle Save Guild Name
+  const handleSaveGuildName = async () => {
+    const { error } = await supabase
+      .from('app_settings')
+      .update({
+        guild_name: guildName,
+        updated_at: new Date().toISOString(),
+        updated_by: profile?.id,
+      })
+      .eq('id', 1);
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Gagal menyimpan nama guild: ' + error.message });
+      return;
+    }
+
+    setMessage({ type: 'success', text: 'Nama Guild berhasil diperbarui!' });
+  };
+
+  // Handle Toggle Emergency Lock
+  const handleToggleLock = async () => {
+    const newLockState = !emergencyLock;
+    const { error } = await supabase
+      .from('app_settings')
+      .update({
+        emergency_lock: newLockState,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', 1);
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Gagal mengubah status lock: ' + error.message });
+      return;
+    }
+
+    setEmergencyLock(newLockState);
+    setMessage({ type: 'success', text: newLockState ? 'Lock darurat AKTIF!' : 'Lock darurat dinonaktifkan.' });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+        <Sidebar userProfile={null} />
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-slate-400">Memuat data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">
@@ -168,7 +263,7 @@ export default function AdminPanelPage() {
                 </div>
 
                 <button
-                  onClick={() => setEmergencyLock(!emergencyLock)}
+                  onClick={handleToggleLock}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                     emergencyLock
                       ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20'

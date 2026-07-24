@@ -1,50 +1,122 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { supabase } from '@/lib/supabase';
 import { Coins, Upload, Image as ImageIcon, Users, CheckCircle, Edit3, ShieldAlert } from 'lucide-react';
 
 export default function BossLootingPage() {
-  const [profile] = useState({
-    username: 'Ahmad Syukri',
-    role: 'guild_master', // 'member', 'officer', 'guild_master'
-  });
+  const [profile, setProfile] = useState(null);
+  const [loots, setLoots] = useState([]);
+  const [selectedLoot, setSelectedLoot] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const isStaffOrGM = ['guild_master', 'officer'].includes(profile.role);
+  // Ambil profile & loot history dari Supabase
+  useEffect(() => {
+    async function loadData() {
+      // Ambil session & profile
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (profileData) setProfile(profileData);
+      }
 
-  // Sample Data History Looting
-  const [loots, setLoots] = useState([
-    {
-      id: 'l1',
-      bossName: 'Onyxia Dragon',
-      killedAt: '24 Jul 2026 - 21:00 WIB',
-      droppedItems: 'Onyxia Scale Cloak, Dragon Ring (Epic)',
-      proofImage: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80',
-      attendees: ['Ahmad Syukri', 'ShadowHunter', 'IronClad', 'MagePro'],
-    },
-    {
-      id: 'l2',
-      bossName: 'Lord Kazzak',
-      killedAt: '24 Jul 2026 - 18:30 WIB',
-      droppedItems: 'Demonic Amulet (Legendary), 5000 Gold',
-      proofImage: null, // Belum diupload
-      attendees: ['Ahmad Syukri', 'Valkyrie', 'MagePro'],
-    },
-  ]);
+      // Ambil loot history dari database
+      const { data: lootData, error: lootError } = await supabase
+        .from('loot_history')
+        .select('*')
+        .order('killed_at', { ascending: false });
 
-  const [selectedLoot, setSelectedLoot] = useState(loots[0]);
-  const [newNote, setNewNote] = useState('');
+      if (lootError) {
+        console.error('Error fetching loot history:', lootError.message);
+      } else if (lootData) {
+        // Ambil attendees untuk setiap loot
+        const lootsWithAttendees = await Promise.all(
+          lootData.map(async (loot) => {
+            const { data: attendees } = await supabase
+              .from('loot_attendees')
+              .select('user_id, ign')
+              .eq('loot_id', loot.id);
 
-  // Handle Mock Upload Screenshot Bukti
-  const handleUploadImage = (lootId) => {
+            let attendeeNames = [];
+            if (attendees && attendees.length > 0) {
+              // Get usernames from profiles for attendees without ign
+              const userIds = attendees.filter(a => !a.ign).map(a => a.user_id);
+              if (userIds.length > 0) {
+                const { data: attendeeProfiles } = await supabase
+                  .from('profiles')
+                  .select('username, ign, id')
+                  .in('id', userIds);
+                
+                if (attendeeProfiles) {
+                  attendeeNames = [
+                    ...attendees.filter(a => a.ign).map(a => a.ign),
+                    ...attendeeProfiles.map(p => p.username || p.ign || 'Unknown'),
+                  ];
+                }
+              } else {
+                attendeeNames = attendees.map(a => a.ign || 'Unknown');
+              }
+            }
+
+            return {
+              ...loot,
+              attendees: attendeeNames,
+            };
+          })
+        );
+
+        setLoots(lootsWithAttendees);
+        if (lootsWithAttendees.length > 0) {
+          setSelectedLoot(lootsWithAttendees[0]);
+        }
+      }
+
+      setLoading(false);
+    }
+
+    loadData();
+  }, []);
+
+  const isStaffOrGM = profile && ['guild_master', 'officer'].includes(profile.role);
+
+  // Handle Upload Screenshot Bukti
+  const handleUploadImage = async (lootId) => {
     const mockImageUrl = 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=600&q=80';
+    
+    // Simpan ke database
+    const { error } = await supabase
+      .from('loot_history')
+      .update({ proof_image: mockImageUrl })
+      .eq('id', lootId);
+
+    if (error) {
+      console.error('Error updating proof image:', error.message);
+      return;
+    }
+
     setLoots((prev) =>
-      prev.map((item) => (item.id === lootId ? { ...item, proofImage: mockImageUrl } : item))
+      prev.map((item) => (item.id === lootId ? { ...item, proof_image: mockImageUrl } : item))
     );
-    if (selectedLoot.id === lootId) {
-      setSelectedLoot((prev) => ({ ...prev, proofImage: mockImageUrl }));
+    if (selectedLoot?.id === lootId) {
+      setSelectedLoot((prev) => ({ ...prev, proof_image: mockImageUrl }));
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex">
+        <Sidebar userProfile={null} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">
@@ -83,14 +155,14 @@ export default function BossLootingPage() {
                 }`}
               >
                 <div className="flex justify-between items-start">
-                  <h3 className="font-bold text-slate-200">{item.bossName}</h3>
+                  <h3 className="font-bold text-slate-200">{item.boss_name}</h3>
                   <span className="text-xs text-indigo-400 font-mono bg-indigo-500/10 px-2 py-0.5 rounded">
                     {item.attendees.length} Member
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">{item.killedAt}</p>
+                <p className="text-xs text-slate-500 mt-1">{item.killed_at}</p>
                 <p className="text-xs text-amber-400/90 font-medium mt-2 truncate">
-                  💎 Drop: {item.droppedItems || 'Belum diisi'}
+                  💎 Drop: {item.dropped_items || 'Belum diisi'}
                 </p>
               </div>
             ))}
@@ -102,8 +174,8 @@ export default function BossLootingPage() {
             {/* Header Detail */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div>
-                <h2 className="text-xl font-bold text-slate-100">{selectedLoot.bossName}</h2>
-                <p className="text-xs text-slate-400">{selectedLoot.killedAt}</p>
+                <h2 className="text-xl font-bold text-slate-100">{selectedLoot.boss_name}</h2>
+                <p className="text-xs text-slate-400">{selectedLoot.killed_at}</p>
               </div>
 
               {isStaffOrGM && (
@@ -120,10 +192,10 @@ export default function BossLootingPage() {
                 Bukti Screenshot Loot (In-Game Screenshot)
               </label>
 
-              {selectedLoot.proofImage ? (
+              {selectedLoot.proof_image ? (
                 <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 max-h-64">
                   <img
-                    src={selectedLoot.proofImage}
+                    src={selectedLoot.proof_image}
                     alt="Loot Screenshot"
                     className="w-full object-cover"
                   />
@@ -152,7 +224,7 @@ export default function BossLootingPage() {
                 Daftar Drop Item
               </label>
               <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5 text-sm text-slate-200">
-                {selectedLoot.droppedItems}
+                {selectedLoot.dropped_items}
               </div>
             </div>
 

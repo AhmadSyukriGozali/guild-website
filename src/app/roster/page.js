@@ -1,51 +1,90 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { supabase } from '@/lib/supabase';
 import { Users, UserPlus, Check, X, Shield, Search, Filter } from 'lucide-react';
 
 export default function GuildRosterPage() {
-  const [profile] = useState({
-    username: 'Ahmad Syukri',
-    role: 'guild_master', // 'member', 'officer', 'guild_master'
-  });
-
-  const isStaffOrGM = ['guild_master', 'officer'].includes(profile.role);
-  const [activeTab, setActiveTab] = useState('members'); // 'members' atau 'pending'
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('members');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Sample Data Member Aktif
-  const [members, setMembers] = useState([
-    { id: 'm1', ign: 'Ahmad Syukri', gameClass: 'Dragon Knight', role: 'guild_master', joinedAt: 'Jan 2026' },
-    { id: 'm2', ign: 'ShadowHunter', gameClass: 'Assassin', role: 'officer', joinedAt: 'Feb 2026' },
-    { id: 'm3', ign: 'Valkyrie', gameClass: 'Holy Priest', role: 'officer', joinedAt: 'Feb 2026' },
-    { id: 'm4', ign: 'IronClad', gameClass: 'Berserker', role: 'member', joinedAt: 'Mar 2026' },
-    { id: 'm5', ign: 'MagePro', gameClass: 'Elementalist', role: 'member', joinedAt: 'Apr 2026' },
-  ]);
+  // Data dari database
+  const [members, setMembers] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
 
-  // Sample Data Pendaftar Baru (Guest / Pending)
-  const [pendingUsers, setPendingUsers] = useState([
-    { id: 'p1', ign: 'NewbieBlade', gameClass: 'Swordsman', requestedAt: '10 Mins Ago' },
-    { id: 'p2', ign: 'HealerPro', gameClass: 'Cleric', requestedAt: '1 Hour Ago' },
-  ]);
+  // Ambil data dari Supabase
+  useEffect(() => {
+    async function loadData() {
+      // Ambil session & profile
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (profileData) setProfile(profileData);
+      }
+
+      // Ambil semua profile dari database
+      const { data: allProfiles, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('joined_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching profiles:', error.message);
+      } else if (allProfiles) {
+        // Pisahkan member aktif (member, officer, guild_master) dan pending (guest)
+        const activeMembers = allProfiles.filter(p => p.role !== 'guest');
+        const pending = allProfiles.filter(p => p.role === 'guest');
+        
+        setMembers(activeMembers);
+        setPendingUsers(pending);
+      }
+
+      setLoading(false);
+    }
+
+    loadData();
+  }, []);
+
+  const isStaffOrGM = profile && ['guild_master', 'officer'].includes(profile.role);
 
   // Handle Approve Member
-  const handleApprove = (user) => {
+  const handleApprove = async (user) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: 'member' })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Error approving member:', error.message);
+      return;
+    }
+
     setPendingUsers((prev) => prev.filter((p) => p.id !== user.id));
     setMembers((prev) => [
       ...prev,
-      {
-        id: user.id,
-        ign: user.ign,
-        gameClass: user.gameClass,
-        role: 'member',
-        joinedAt: 'Baru Saja',
-      },
+      { ...user, role: 'member' },
     ]);
   };
 
-  // Handle Reject Member
-  const handleReject = (userId) => {
+  // Handle Reject Member (delete profile)
+  const handleReject = async (userId) => {
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error rejecting member:', error.message);
+      return;
+    }
+
     setPendingUsers((prev) => prev.filter((p) => p.id !== userId));
   };
 

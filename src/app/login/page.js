@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [isStaffOrGM, setIsStaffOrGM] = useState(false);
   const [passkey, setPasskey] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [verifying, setVerifying] = useState(false);
 
   // Handle Login Provider (Google / Discord)
   const handleOAuthLogin = async (provider) => {
@@ -17,10 +18,41 @@ export default function LoginPage() {
       return;
     }
 
-    // Nanti di sini kita verifikasi Passkey via Supabase RPC / App Settings
+    // Verifikasi passkey dari database Supabase (tabel app_settings)
     if (isStaffOrGM) {
-      // Contoh simpan status passkey sementara di Session Storage
-      sessionStorage.setItem('guild_master_passkey', passkey);
+      setVerifying(true);
+      setErrorMsg('');
+
+      try {
+        // Ambil master passkey dari tabel app_settings (hanya staff nanti yg lihat)
+        const { data, error } = await supabase
+          .from('app_settings')
+          .select('master_passkey_hash')
+          .limit(1)
+          .single();
+
+        if (error) {
+          setErrorMsg('Gagal memverifikasi passkey. Coba lagi.');
+          setVerifying(false);
+          return;
+        }
+
+        // Bandingkan passkey langsung (plain text — untuk demo, idealnya pakai hash)
+        if (data?.master_passkey_hash !== passkey) {
+          setErrorMsg('Master Passkey Pengurus salah!');
+          setVerifying(false);
+          return;
+        }
+
+        // Simpan status passkey di Session Storage jika valid
+        sessionStorage.setItem('guild_master_passkey', passkey);
+      } catch (err) {
+        setErrorMsg('Terjadi kesalahan. Coba lagi nanti.');
+        setVerifying(false);
+        return;
+      }
+
+      setVerifying(false);
     }
 
     const { error } = await supabase.auth.signInWithOAuth({
