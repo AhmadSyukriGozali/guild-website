@@ -18,36 +18,31 @@ export default function LoginPage() {
       return;
     }
 
-    // Verifikasi passkey dari database Supabase (tabel app_settings)
+    // Verifikasi passkey via API Route (server-side, bypass RLS)
     if (isStaffOrGM) {
       setVerifying(true);
       setErrorMsg('');
 
       try {
-        // Ambil master passkey dari tabel app_settings (hanya staff nanti yg lihat)
-        const { data, error } = await supabase
-          .from('app_settings')
-          .select('master_passkey_hash')
-          .limit(1)
-          .single();
+        const res = await fetch('/api/verify-passkey', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passkey }),
+        });
 
-        if (error) {
-          setErrorMsg('Gagal memverifikasi passkey. Coba lagi.');
+        const result = await res.json();
+
+        if (result.valid) {
+          // Passkey cocok!
+          sessionStorage.setItem('guild_master_passkey', passkey);
+          setVerifying(false);
+        } else {
+          setErrorMsg(result.error || 'Master Passkey Pengurus salah!');
           setVerifying(false);
           return;
         }
-
-        // Bandingkan passkey langsung (plain text — untuk demo, idealnya pakai hash)
-        if (data?.master_passkey_hash !== passkey) {
-          setErrorMsg('Master Passkey Pengurus salah!');
-          setVerifying(false);
-          return;
-        }
-
-        // Simpan status passkey di Session Storage jika valid
-        sessionStorage.setItem('guild_master_passkey', passkey);
       } catch (err) {
-        setErrorMsg('Terjadi kesalahan. Coba lagi nanti.');
+        setErrorMsg('Gagal terhubung ke server. Coba lagi.');
         setVerifying(false);
         return;
       }
