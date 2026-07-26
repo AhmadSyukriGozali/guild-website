@@ -29,7 +29,7 @@ export async function POST(request) {
       .maybeSingle();
 
     if (error) {
-      console.error('Verify passkey - DB error:', error.message);
+      console.error(error);
       // Fallback: coba via raw SQL
       try {
         const { data: sqlData, error: sqlError } = await supabaseAdmin.rpc('verify_master_passkey', {
