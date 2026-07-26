@@ -1,27 +1,56 @@
 import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-
-// Buat Supabase admin client (service_role bypass RLS)
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
-);
 
 export async function POST(request) {
   try {
     const { passkey } = await request.json();
 
-    if (!passkey) {
-      return NextResponse.json({ valid: false, error: 'Passkey tidak boleh kosong' }, { status: 400 });
+    if (!passkey || typeof passkey !== 'string') {
+      return NextResponse.json(
+        { valid: false, error: 'Passkey tidak boleh kosong' },
+        { status: 400 }
+      );
     }
 
-    // Ambil passkey dari tabel app_settings (via public anon, tapi kita bypass)
+    const cookieStore = await cookies();
+
+    const supabaseUser = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              try {
+                cookieStore.set(name, value, options);
+              } catch {}
+            });
+          },
+        },
+      }
+    );
+
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const { data: userData, error: userError } = await supabaseUser.auth.getUser();
+
+    if (userError || !userData?.user) {
+      return NextResponse.json(
+        { valid: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const user = userData.user;
+
     const { data, error } = await supabaseAdmin
       .from('app_settings')
       .select('master_passkey_hash')
@@ -29,34 +58,52 @@ export async function POST(request) {
       .maybeSingle();
 
     if (error) {
-      console.error(error);
-      // Fallback: coba via raw SQL
-      try {
-        const { data: sqlData, error: sqlError } = await supabaseAdmin.rpc('verify_master_passkey', {
-          input_passkey: passkey,
-        });
-
-        if (sqlError) {
-          return NextResponse.json({ valid: false, error: 'Fungsi verifikasi passkey belum tersedia di database' }, { status: 500 });
-        }
-
-        return NextResponse.json({ valid: sqlData === true });
-      } catch {
-        return NextResponse.json({ valid: false, error: 'Gagal terhubung ke database' }, { status: 500 });
-      }
+      return NextResponse.json(
+        { valid: false, error: error.message },
+        { status: 500 }
+      );
     }
 
-    // Bandingkan passkey
-    console.log("Input Passkey :", passkey);
-    console.log("DB Passkey    :", data?.master_passkey_hash);
-    
-    const isValid = data?.master_passkey_hash === passkey;
+    const storedPasskey = (data?.master_passkey_hash || '').trim();
+    const inputPasskey = passkey.trim();
 
-    console.log("Match :", isValid);
+    if (!storedPasskey) {
+      return NextResponse.json(
+        { valid: false, error: 'Master passkey belum diisi di database' },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json({ valid: isValid });
+    const isValid = storedPasskey === inputPasskey;
+
+    if (!isValid) {
+      return NextResponse.json(
+        { valid: false, error: 'Master Passkey Pengurus salah!' },
+        { status: 200 }
+      );
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        role: 'officer',
+        status: 'approved',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      return NextResponse.json(
+        { valid: false, error: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ valid: true, role: 'officer' });
   } catch (err) {
-    return NextResponse.json({ valid: false, error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { valid: false, error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
-
