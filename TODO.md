@@ -29,3 +29,9 @@
   - Timeout 15 detik sebagai fallback safety
 - [ ] ⚠️ **WAJIB**: Aktifkan Google provider di Supabase Dashboard → Authentication → Providers → Google → masukkan Client ID & Client Secret dari Google Cloud Console
 
+## 🔧 Fix Apply Member (26 Jul 2025)
+- [x] `src/app/api/apply-member/route.js` — Tambah `global.headers` dengan Authorization Bearer token:
+  - **Sebelumnya:** Token hanya dipakai untuk `getUser(accessToken)` tapi **tidak dikirim** saat query ke database (select/update profiles)
+  - **Akibatnya:** Query dianggap **anonymous/anonymous** oleh Supabase → RLS menolak karena `auth.role()` tidak terdeteksi sebagai `authenticated`
+  - **Perbaikan:** Token disertakan di `global.headers` sehingga semua request ke Supabase terautentikasi
+

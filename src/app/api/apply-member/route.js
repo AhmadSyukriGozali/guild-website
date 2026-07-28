@@ -52,9 +52,9 @@ export async function POST(request) {
     /*
      * Buat Supabase client untuk API.
      *
-     * Client ini tidak bergantung pada cookie browser.
-     * User akan divalidasi menggunakan access token
-     * yang dikirim dari Dashboard.
+     * Access token disertakan di global headers agar
+     * semua query selanjutnya terautentikasi
+     * dan RLS dapat membaca auth.uid() dengan benar.
      */
     const supabase =
       createClient(
@@ -67,6 +67,12 @@ export async function POST(request) {
             persistSession: false,
             autoRefreshToken: false,
           },
+          global: {
+            headers: {
+              Authorization:
+                `Bearer ${accessToken}`,
+            },
+          },
         }
       );
 
@@ -78,9 +84,7 @@ export async function POST(request) {
         user,
       },
       error: authError,
-    } = await supabase.auth.getUser(
-      accessToken
-    );
+    } = await supabase.auth.getUser();
 
     if (
       authError ||
