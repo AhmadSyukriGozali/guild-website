@@ -5,7 +5,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
-    'Supabase URL atau Anon Key belum tersedia. Periksa .env.local atau Environment Variables di Vercel.'
+    'Supabase URL atau Anon Key belum tersedia. Periksa Environment Variables.'
   );
 }
 
@@ -14,9 +14,26 @@ export const supabase = createClient(
   supabaseAnonKey,
   {
     auth: {
-      flowType: 'pkce',
+      /*
+       * Gunakan implicit flow karena provider saat ini
+       * mengembalikan access_token pada URL hash.
+       */
+      flowType: 'implicit',
+
+      /*
+       * Supabase akan membaca access_token dan refresh_token
+       * dari URL secara otomatis.
+       */
       detectSessionInUrl: true,
+
+      /*
+       * Session disimpan di browser.
+       */
       persistSession: true,
+
+      /*
+       * Session diperbarui otomatis jika mendekati masa habis.
+       */
       autoRefreshToken: true,
     },
   }

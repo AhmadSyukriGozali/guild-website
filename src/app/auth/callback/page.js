@@ -12,104 +12,23 @@ export default function AuthCallbackPage() {
   );
 
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
 
-    async function processLogin() {
+    async function handleCallback() {
       try {
-        const currentUrl = new URL(window.location.href);
-
-        const code = currentUrl.searchParams.get('code');
+        setMessage('Menunggu sesi login...');
 
         /*
-         * MODE 1:
-         * Jika Google mengirim authorization code,
-         * tukarkan code menjadi session.
+         * Tunggu Supabase membaca token OAuth dari URL.
          */
-        if (code) {
-          setMessage('Menyelesaikan autentikasi...');
-
-          const { error: exchangeError } =
-            await supabase.auth.exchangeCodeForSession(code);
-
-          if (exchangeError) {
-            console.error(
-              'Gagal menukar kode OAuth:',
-              exchangeError
-            );
-
-            router.replace(
-              `/login?error=${encodeURIComponent(
-                'Gagal menyelesaikan login Google. Silakan login kembali.'
-              )}`
-            );
-
-            return;
-          }
-        }
+        await new Promise((resolve) => {
+          setTimeout(resolve, 1000);
+        });
 
         /*
-         * MODE 2:
-         * Jika provider mengirim token pada URL fragment:
-         *
-         * #access_token=...
-         * #refresh_token=...
-         *
-         * Token harus dibaca secara manual.
+         * Ambil session yang sudah diproses otomatis
+         * oleh detectSessionInUrl.
          */
-        const hashParams = new URLSearchParams(
-          window.location.hash.replace('#', '')
-        );
-
-        const accessToken =
-          hashParams.get('access_token');
-
-        const refreshToken =
-          hashParams.get('refresh_token');
-
-        if (accessToken && refreshToken) {
-          setMessage('Menyimpan sesi login...');
-
-          const { error: setSessionError } =
-            await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-
-          if (setSessionError) {
-            console.error(
-              'Gagal menyimpan session:',
-              setSessionError
-            );
-
-            router.replace(
-              `/login?error=${encodeURIComponent(
-                'Session login tidak dapat disimpan. Silakan login kembali.'
-              )}`
-            );
-
-            return;
-          }
-
-          /*
-           * Bersihkan token dari address bar.
-           */
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
-        }
-
-        /*
-         * Tunggu sebentar agar Supabase selesai
-         * menyimpan session di browser.
-         */
-        await new Promise((resolve) =>
-          setTimeout(resolve, 500)
-        );
-
-        setMessage('Memeriksa sesi pengguna...');
-
         const {
           data: sessionData,
           error: sessionError,
@@ -117,8 +36,12 @@ export default function AuthCallbackPage() {
 
         if (sessionError) {
           console.error(
-            'Gagal membaca session:',
+            'Gagal mengambil session:',
             sessionError
+          );
+
+          throw new Error(
+            'Session Supabase tidak dapat dibaca.'
           );
         }
 
@@ -126,25 +49,23 @@ export default function AuthCallbackPage() {
 
         if (!session) {
           console.error(
-            'Session tidak ditemukan.'
+            'Session kosong setelah callback.'
           );
 
-          router.replace(
-            `/login?error=${encodeURIComponent(
-              'Data login tidak ditemukan. Silakan login kembali.'
-            )}`
+          console.log(
+            'URL callback:',
+            window.location.href
           );
 
-          return;
+          throw new Error(
+            'Session login tidak ditemukan.'
+          );
         }
 
         const user = session.user;
 
         setMessage('Menyiapkan profil pengguna...');
 
-        /*
-         * Ambil data pengguna dari Google atau Discord.
-         */
         const fullName =
           user.user_metadata?.full_name ||
           user.user_metadata?.name ||
@@ -169,26 +90,26 @@ export default function AuthCallbackPage() {
           'unknown';
 
         /*
-         * Periksa apakah profil sudah ada.
+         * Cek profil pengguna.
          */
         const {
           data: existingProfile,
-          error: profileError,
+          error: checkError,
         } = await supabase
           .from('profiles')
           .select('id')
           .eq('id', user.id)
           .maybeSingle();
 
-        if (profileError) {
+        if (checkError) {
           console.error(
             'Gagal memeriksa profil:',
-            profileError
+            checkError
           );
         }
 
         /*
-         * Jika belum ada, buat sebagai guest.
+         * Buat profil baru jika belum ada.
          */
         if (!existingProfile) {
           const { error: insertError } =
@@ -216,8 +137,7 @@ export default function AuthCallbackPage() {
         }
 
         /*
-         * Jika profil sudah ada,
-         * perbarui data dasar pengguna.
+         * Perbarui data profil jika sudah ada.
          */
         if (existingProfile) {
           const { error: updateError } =
@@ -241,7 +161,7 @@ export default function AuthCallbackPage() {
           }
         }
 
-        if (!isMounted) {
+        if (!active) {
           return;
         }
 
@@ -249,30 +169,34 @@ export default function AuthCallbackPage() {
           'Login berhasil. Membuka dashboard...'
         );
 
-        await new Promise((resolve) =>
-          setTimeout(resolve, 500)
-        );
+        await new Promise((resolve) => {
+          setTimeout(resolve, 500);
+        });
 
         router.replace('/dashboard');
 
       } catch (error) {
         console.error(
-          'Kesalahan callback login:',
+          'Callback login gagal:',
           error
         );
 
+        if (!active) {
+          return;
+        }
+
         router.replace(
           `/login?error=${encodeURIComponent(
-            'Terjadi kesalahan saat memproses login.'
+            'Data login tidak ditemukan. Silakan login kembali.'
           )}`
         );
       }
     }
 
-    processLogin();
+    handleCallback();
 
     return () => {
-      isMounted = false;
+      active = false;
     };
   }, [router]);
 
