@@ -32,6 +32,13 @@
 ## 🔧 Fix Apply Member (26 Jul 2025)
 - [x] `src/app/api/apply-member/route.js` — Tambah `global.headers` dengan Authorization Bearer token:
   - **Sebelumnya:** Token hanya dipakai untuk `getUser(accessToken)` tapi **tidak dikirim** saat query ke database (select/update profiles)
-  - **Akibatnya:** Query dianggap **anonymous/anonymous** oleh Supabase → RLS menolak karena `auth.role()` tidak terdeteksi sebagai `authenticated`
+  - **Akibatnya:** Query dianggap **anonymous** oleh Supabase → RLS menolak karena `auth.role()` tidak terdeteksi sebagai `authenticated`
   - **Perbaikan:** Token disertakan di `global.headers` sehingga semua request ke Supabase terautentikasi
+
+## 🔧 Fix Admin Panel — Tambah Persetujuan Member (26 Jul 2025)
+- [x] `src/app/admin/page.js` — Tambah section "Persetujuan Member Baru":
+  - Load otomatis daftar profile dengan `status === 'pending'`
+  - Tombol **Setujui** (✓) → update `role: 'member'`, `status: 'active'`
+  - Tombol **Tolak** (✗) → delete profile
+  - Hanya muncul jika ada pending members
 

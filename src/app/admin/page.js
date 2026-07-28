@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { supabase } from '@/lib/supabase';
-import { ShieldCheck, KeyRound, Lock, Globe, Save, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, KeyRound, Lock, Globe, Save, AlertTriangle, CheckCircle2, Users, UserPlus, Check, X, Clock } from 'lucide-react';
 
 export default function AdminPanelPage() {
   const [profile, setProfile] = useState(null);
@@ -16,6 +16,10 @@ export default function AdminPanelPage() {
   const [confirmPasskey, setConfirmPasskey] = useState('');
   const [emergencyLock, setEmergencyLock] = useState(false);
   
+  // State Pending Members
+  const [pendingMembers, setPendingMembers] = useState([]);
+  const [approvingId, setApprovingId] = useState(null);
+
   // Status Feedback
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -50,6 +54,27 @@ export default function AdminPanelPage() {
 
     loadAdminData();
   }, []);
+
+  // Ambil daftar pending members
+  useEffect(() => {
+    if (!profile) return;
+
+    async function loadPendingMembers() {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('status', 'pending')
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading pending members:', error.message);
+      } else {
+        setPendingMembers(data || []);
+      }
+    }
+
+    loadPendingMembers();
+  }, [profile]);
 
   // Handle Update Master Passkey
   const handleUpdatePasskey = async (e) => {
@@ -277,6 +302,111 @@ export default function AdminPanelPage() {
           </div>
 
         </div>
+
+        {/* SECTION: PERSETUJUAN MEMBER */}
+        {pendingMembers.length > 0 && (
+          <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+              <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg">
+                <UserPlus className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-bold text-slate-100 text-base">
+                  Persetujuan Member Baru
+                </h2>
+                <p className="text-xs text-slate-400">
+                  {pendingMembers.length} anggota menunggu persetujuan
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {pendingMembers.map((member) => (
+                <div
+                  key={member.id}
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {member.avatar_url ? (
+                      <img
+                        src={member.avatar_url}
+                        alt={member.username || 'Avatar'}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-700 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                        <Users className="w-4 h-4 text-slate-500" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-slate-200 text-sm truncate">
+                        {member.username || member.full_name || 'Tanpa Nama'}
+                      </h3>
+                      <p className="text-xs text-slate-500 truncate">
+                        {member.email || ''}
+                      </p>
+                      <p className="text-[11px] text-slate-600 flex items-center gap-1 mt-1">
+                        <Clock className="w-3 h-3" />
+                        Provider: {member.provider || 'unknown'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setApprovingId(member.id);
+                        const { error } = await supabase
+                          .from('profiles')
+                          .update({ role: 'member', status: 'active', updated_at: new Date().toISOString() })
+                          .eq('id', member.id);
+
+                        if (error) {
+                          setMessage({ type: 'error', text: 'Gagal menyetujui: ' + error.message });
+                        } else {
+                          setMessage({ type: 'success', text: `${member.username || 'Anggota'} berhasil disetujui!` });
+                          setPendingMembers((prev) => prev.filter((p) => p.id !== member.id));
+                        }
+                        setApprovingId(null);
+                      }}
+                      disabled={approvingId === member.id}
+                      className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all disabled:opacity-60"
+                      title="Setujui"
+                    >
+                      {approvingId === member.id ? (
+                        <Clock className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const { error } = await supabase
+                          .from('profiles')
+                          .delete()
+                          .eq('id', member.id);
+
+                        if (error) {
+                          setMessage({ type: 'error', text: 'Gagal menolak: ' + error.message });
+                        } else {
+                          setMessage({ type: 'success', text: `${member.username || 'Anggota'} ditolak.` });
+                          setPendingMembers((prev) => prev.filter((p) => p.id !== member.id));
+                        }
+                      }}
+                      className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors border border-rose-500/20"
+                      title="Tolak"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
       </main>
     </div>
