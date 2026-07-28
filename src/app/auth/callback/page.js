@@ -6,36 +6,74 @@ import { supabase } from '@/lib/supabase';
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const [message, setMessage] = useState('Memeriksa sesi login...');
+
+  const [message, setMessage] = useState(
+    'Memeriksa data login...'
+  );
 
   useEffect(() => {
-    let isProcessing = false;
+    let cancelled = false;
 
-    async function processLogin() {
-      if (isProcessing) return;
-
-      isProcessing = true;
-
+    async function handleCallback() {
       try {
-        setMessage('Memeriksa data autentikasi...');
+        const url = new URL(window.location.href);
 
-        const currentUrl = new URL(window.location.href);
+        // Google biasanya mengirim authorization code:
+        // /auth/callback?code=xxxxxxxx
+        const code = url.searchParams.get('code');
 
-        // Google biasanya mengirim authorization code melalui query parameter.
-        const code = currentUrl.searchParams.get('code');
+        // Discord pada konfigurasi sebelumnya mengirim token:
+        // /auth/callback#access_token=xxxxxxxx
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace('#', '')
+        );
+
+        const accessToken =
+          hashParams.get('access_token');
+
+        const refreshToken =
+          hashParams.get('refresh_token');
+
+        // ==========================================
+        // 1. LOGIN GOOGLE — TUKAR CODE MENJADI SESSION
+        // ==========================================
 
         if (code) {
-          setMessage('Menyelesaikan login Google...');
+          setMessage(
+            'Menyelesaikan login Google...'
+          );
 
-          const { error } =
-            await supabase.auth.exchangeCodeForSession(code);
+          const {
+            data: exchangeData,
+            error: exchangeError,
+          } = await supabase.auth.exchangeCodeForSession(
+            code
+          );
 
-          if (error) {
-            console.error('Gagal menukar kode OAuth:', error);
+          if (exchangeError) {
+            console.error(
+              'Google exchange error:',
+              exchangeError
+            );
 
             router.replace(
               `/login?error=${encodeURIComponent(
-                error.message || 'Gagal menyelesaikan login.'
+                `Login Google gagal: ${exchangeError.message}`
+              )}`
+            );
+
+            return;
+          }
+
+          if (!exchangeData?.session) {
+            console.error(
+              'Google tidak menghasilkan session:',
+              exchangeData
+            );
+
+            router.replace(
+              `/login?error=${encodeURIComponent(
+                'Google berhasil diautentikasi, tetapi session tidak berhasil dibuat.'
               )}`
             );
 
@@ -43,36 +81,37 @@ export default function AuthCallbackPage() {
           }
         }
 
-        // Discord pada konfigurasi sebelumnya mengirim access token
-        // melalui bagian hash URL.
-        const hashParams = new URLSearchParams(
-          window.location.hash.replace(/^#/, '')
-        );
+        // ==========================================
+        // 2. LOGIN DISCORD — SIMPAN TOKEN DARI HASH
+        // ==========================================
 
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
+        else if (accessToken && refreshToken) {
+          setMessage(
+            'Menyimpan sesi Discord...'
+          );
 
-        if (accessToken && refreshToken) {
-          setMessage('Menyimpan sesi Discord...');
+          const { error: setSessionError } =
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
 
-          const { error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-
-          if (error) {
-            console.error('Gagal menyimpan sesi OAuth:', error);
+          if (setSessionError) {
+            console.error(
+              'Discord session error:',
+              setSessionError
+            );
 
             router.replace(
               `/login?error=${encodeURIComponent(
-                error.message || 'Gagal menyimpan sesi login.'
+                `Login Discord gagal: ${setSessionError.message}`
               )}`
             );
 
             return;
           }
 
-          // Hapus token dari address bar.
+          // Menghapus token dari address bar
           window.history.replaceState(
             {},
             document.title,
@@ -80,31 +119,76 @@ export default function AuthCallbackPage() {
           );
         }
 
-        setMessage('Memeriksa sesi pengguna...');
+        // ==========================================
+        // 3. JIKA TIDAK ADA CODE ATAU TOKEN
+        // ==========================================
 
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          console.error('Gagal membaca sesi:', sessionError);
+        else {
+          console.error(
+            'OAuth callback tidak menerima code atau token.',
+            {
+              search: window.location.search,
+              hash: window.location.hash
+                ? 'ADA HASH'
+                : 'TIDAK ADA HASH',
+            }
+          );
 
           router.replace(
             `/login?error=${encodeURIComponent(
-              sessionError.message || 'Gagal membaca sesi login.'
+              'Data login tidak ditemukan pada halaman callback.'
             )}`
           );
 
           return;
         }
 
-        if (!session?.user) {
+        if (cancelled) {
+          return;
+        }
+
+        setMessage(
+          'Memeriksa sesi pengguna...'
+        );
+
+        // Beri waktu singkat agar session tersimpan
+        await new Promise((resolve) =>
+          setTimeout(resolve, 500)
+        );
+
+        const {
+          data: sessionData,
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.error(
+            'Get session error:',
+            sessionError
+          );
+
           router.replace(
-            '/login?error=' +
-              encodeURIComponent(
-                'Token login tidak ditemukan. Silakan login kembali.'
-              )
+            `/login?error=${encodeURIComponent(
+              `Gagal membaca session: ${sessionError.message}`
+            )}`
+          );
+
+          return;
+        }
+
+        const session =
+          sessionData?.session;
+
+        if (!session?.user) {
+          console.error(
+            'Session kosong setelah OAuth.',
+            sessionData
+          );
+
+          router.replace(
+            `/login?error=${encodeURIComponent(
+              'Session login tidak berhasil disimpan.'
+            )}`
           );
 
           return;
@@ -112,7 +196,9 @@ export default function AuthCallbackPage() {
 
         const user = session.user;
 
-        setMessage('Menyiapkan profil pengguna...');
+        setMessage(
+          'Menyiapkan profil pengguna...'
+        );
 
         const username =
           user.user_metadata?.user_name ||
@@ -136,83 +222,111 @@ export default function AuthCallbackPage() {
           user.app_metadata?.provider ||
           'oauth';
 
-        const { data: existingProfile, error: profileCheckError } =
-          await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', user.id)
-            .maybeSingle();
+        // Memeriksa apakah profil sudah ada
+        const {
+          data: existingProfile,
+          error: profileCheckError,
+        } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
 
         if (profileCheckError) {
           console.error(
-            'Gagal memeriksa profil:',
+            'Profile check error:',
             profileCheckError
           );
         }
 
+        // Membuat profil baru
         if (!existingProfile) {
-          const { error: insertError } =
-            await supabase
-              .from('profiles')
-              .insert({
-                id: user.id,
-                username,
-                full_name: fullName,
-                email: user.email || '',
-                avatar_url: avatarUrl,
-                provider,
-                role: 'guest',
-                status: 'guest',
-              });
+          const {
+            error: insertError,
+          } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              username,
+              full_name: fullName,
+              email: user.email || '',
+              avatar_url: avatarUrl,
+              provider,
+              role: 'guest',
+              status: 'guest',
+            });
 
           if (insertError) {
             console.error(
-              'Gagal membuat profil:',
+              'Profile insert error:',
               insertError
             );
           }
-        } else {
-          const { error: updateError } =
-            await supabase
-              .from('profiles')
-              .update({
-                username,
-                full_name: fullName,
-                email: user.email || '',
-                avatar_url: avatarUrl,
-                provider,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', user.id);
+        }
+
+        // Memperbarui profil lama
+        else {
+          const {
+            error: updateError,
+          } = await supabase
+            .from('profiles')
+            .update({
+              username,
+              full_name: fullName,
+              email: user.email || '',
+              avatar_url: avatarUrl,
+              provider,
+              updated_at:
+                new Date().toISOString(),
+            })
+            .eq('id', user.id);
 
           if (updateError) {
             console.error(
-              'Gagal memperbarui profil:',
+              'Profile update error:',
               updateError
             );
           }
         }
 
-        setMessage('Login berhasil. Membuka dashboard...');
+        if (cancelled) {
+          return;
+        }
+
+        setMessage(
+          'Login berhasil. Membuka dashboard...'
+        );
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, 400)
+        );
 
         router.replace('/dashboard');
         router.refresh();
       } catch (error) {
         console.error(
-          'Kesalahan tidak terduga pada callback:',
+          'Callback tidak terduga:',
           error
         );
 
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Terjadi kesalahan tidak dikenal.';
+
         router.replace(
-          '/login?error=' +
-            encodeURIComponent(
-              'Terjadi kesalahan saat memproses login.'
-            )
+          `/login?error=${encodeURIComponent(
+            `Proses login gagal: ${errorMessage}`
+          )}`
         );
       }
     }
 
-    processLogin();
+    handleCallback();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (

@@ -1,4 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import {
+  createClient,
+} from '@supabase/supabase-js';
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -6,9 +8,15 @@ const supabaseUrl =
 const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl) {
   throw new Error(
-    'NEXT_PUBLIC_SUPABASE_URL atau NEXT_PUBLIC_SUPABASE_ANON_KEY belum tersedia.'
+    'NEXT_PUBLIC_SUPABASE_URL belum tersedia.'
+  );
+}
+
+if (!supabaseAnonKey) {
+  throw new Error(
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY belum tersedia.'
   );
 }
 
@@ -20,6 +28,7 @@ export const supabase = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
+      flowType: 'pkce',
     },
   }
 );
