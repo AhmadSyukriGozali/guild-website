@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { KeyRound, ArrowLeft } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function VerifyStaffPage() {
   const [passkey, setPasskey] = useState('');
@@ -28,6 +29,29 @@ export default function VerifyStaffPage() {
 
       if (!res.ok || !result.valid) {
         setErrorMsg(result.error || 'Passkey salah.');
+        return;
+      }
+
+      // Passkey valid — ambil session user dan update role jadi officer
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.user) {
+        setErrorMsg('Sesi login tidak ditemukan. Silakan login ulang.');
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          role: 'officer', 
+          status: 'active',
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', session.user.id);
+
+      if (updateError) {
+        console.error('Gagal update role:', updateError.message);
+        setErrorMsg('Gagal mengubah role akun: ' + updateError.message);
         return;
       }
 

@@ -30,7 +30,7 @@ export async function POST(request) {
 
     const { data, error } = await supabaseAdmin
       .from('app_settings')
-      .select('master_passkey')
+      .select('master_passkey_hash')
       .eq('id', 1)
       .single();
 
@@ -52,8 +52,10 @@ export async function POST(request) {
     }
 
     const valid =
-      data?.master_passkey === passkey.trim();
+      data?.master_passkey_hash === passkey.trim();
 
+    // Jika valid, kirim juga user_id dari header Authorization (optional)
+    // untuk update role di client
     return NextResponse.json(
       {
         valid,

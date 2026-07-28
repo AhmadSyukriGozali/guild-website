@@ -15,6 +15,11 @@ import {
   CheckCircle2,
   UserPlus,
   Crown,
+  Timer,
+  Coins,
+  Calendar,
+  Image as GalleryIcon,
+  ShieldCheck,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -851,6 +856,68 @@ export default function DashboardPage() {
           </section>
 
         )}
+
+        {/* NAVIGASI FITUR */}
+
+        <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <button
+            type="button"
+            onClick={() => router.push('/tracker')}
+            className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4 hover:border-indigo-500/50 transition-all text-left"
+          >
+            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl">
+              <Timer className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Boss Tracker</p>
+              <p className="text-xs text-slate-500">Catat spawn & absensi boss</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.push('/looting')}
+            className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4 hover:border-indigo-500/50 transition-all text-left"
+          >
+            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+              <Coins className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Boss Looting</p>
+              <p className="text-xs text-slate-500">Riwayat loot & drop item</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.push('/roster')}
+            className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4 hover:border-indigo-500/50 transition-all text-left"
+          >
+            <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Guild Roster</p>
+              <p className="text-xs text-slate-500">Daftar anggota & pending</p>
+            </div>
+          </button>
+
+          {isStaff && (
+            <button
+              type="button"
+              onClick={() => router.push('/admin')}
+              className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center gap-4 hover:border-indigo-500/50 transition-all text-left"
+            >
+              <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-200">Admin Panel</p>
+                <p className="text-xs text-slate-500">Pengaturan guild & approve member</p>
+              </div>
+            </button>
+          )}
+        </section>
 
         {/* STATISTIK */}
 
