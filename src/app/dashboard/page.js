@@ -240,19 +240,54 @@ export default function DashboardPage() {
    */
   const handleApplyMember = async () => {
     try {
-      setActionLoading('member');
-      setActionError('');
-
-      const response = await fetch(
-        '/api/apply-member',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-        }
+      setActionLoading(
+        'member'
       );
+
+      setActionError(
+        ''
+      );
+
+      /*
+       * Ambil sesi terbaru dari Supabase.
+       */
+      const {
+        data: {
+          session,
+        },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (
+        sessionError ||
+        !session
+      ) {
+        setActionError(
+          'Sesi login tidak ditemukan. Silakan login kembali.'
+        );
+
+        return;
+      }
+
+      /*
+       * Kirim access token ke API.
+       */
+      const response =
+        await fetch(
+          '/api/apply-member',
+          {
+            method:
+              'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json',
+
+              Authorization:
+                `Bearer ${session.access_token}`,
+            },
+          }
+        );
 
       const result =
         await response.json();
@@ -263,32 +298,46 @@ export default function DashboardPage() {
       ) {
         setActionError(
           result.error ||
-          'Gagal mengajukan member.'
+          'Gagal mengajukan Member.'
         );
 
         return;
       }
 
       /*
-       * Update state lokal agar halaman
-       * langsung berubah menjadi pending.
+       * Ubah tampilan langsung menjadi Pending
+       * tanpa perlu refresh halaman.
        */
-      setProfile((previousProfile) => {
-        if (!previousProfile) {
+      setProfile(
+        (
+          previousProfile
+        ) => {
+          if (
+            !previousProfile
+          ) {
+            return {
+              id:
+                session.user.id,
+
+              role:
+                'guest',
+
+              status:
+                'pending',
+            };
+          }
+
           return {
-            role: 'guest',
-            status: 'pending',
+            ...previousProfile,
+
+            status:
+              'pending',
           };
         }
-
-        return {
-          ...previousProfile,
-          status: 'pending',
-        };
-      });
+      );
     } catch (error) {
       console.error(
-        'Error mengajukan member:',
+        'Error mengajukan Member:',
         error
       );
 
@@ -296,7 +345,9 @@ export default function DashboardPage() {
         'Gagal terhubung ke server.'
       );
     } finally {
-      setActionLoading('');
+      setActionLoading(
+        ''
+      );
     }
   };
 

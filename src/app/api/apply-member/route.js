@@ -1,51 +1,23 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-export async function POST() {
+export async function POST(request) {
   try {
-    const cookieStore = await cookies();
+    /*
+     * Ambil access token yang dikirim dari Dashboard.
+     */
+    const authorization =
+      request.headers.get('authorization');
 
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) => {
-                cookieStore.set(name, value, options);
-              });
-            } catch {
-              // Pada Route Handler, cookie bisa gagal diubah.
-              // Sesi tetap dapat dibaca dari cookie yang sudah ada.
-            }
-          },
-        },
-      }
-    );
-
-    // Ambil user yang benar-benar sedang login.
-    // getUser() memvalidasi user melalui Supabase Auth.
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error(
-        'Apply member auth error:',
-        authError?.message || 'User tidak ditemukan'
-      );
-
+    if (
+      !authorization ||
+      !authorization.startsWith('Bearer ')
+    ) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Unauthorized. Sesi login tidak ditemukan. Silakan login kembali.',
+          error:
+            'Unauthorized. Token login tidak dikirim.',
         },
         {
           status: 401,
@@ -53,20 +25,114 @@ export async function POST() {
       );
     }
 
-    // Ambil profil akun yang sedang login.
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role, status')
-      .eq('id', user.id)
-      .maybeSingle();
+    /*
+     * Pisahkan token dari:
+     *
+     * Bearer ACCESS_TOKEN
+     */
+    const accessToken =
+      authorization.replace(
+        'Bearer ',
+        ''
+      );
 
-    if (profileError) {
-      console.error('Apply member profile error:', profileError.message);
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Unauthorized. Token login kosong.',
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    /*
+     * Buat Supabase client untuk API.
+     *
+     * Client ini tidak bergantung pada cookie browser.
+     * User akan divalidasi menggunakan access token
+     * yang dikirim dari Dashboard.
+     */
+    const supabase =
+      createClient(
+        process.env
+          .NEXT_PUBLIC_SUPABASE_URL,
+        process.env
+          .NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        }
+      );
+
+    /*
+     * Validasi token dan ambil user yang login.
+     */
+    const {
+      data: {
+        user,
+      },
+      error: authError,
+    } = await supabase.auth.getUser(
+      accessToken
+    );
+
+    if (
+      authError ||
+      !user
+    ) {
+      console.error(
+        'Apply member auth error:',
+        authError?.message ||
+          'User tidak ditemukan'
+      );
 
       return NextResponse.json(
         {
           ok: false,
-          error: 'Gagal membaca data profil.',
+          error:
+            'Unauthorized. Token login tidak valid atau sudah kedaluwarsa.',
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    /*
+     * Ambil profil akun yang sedang login.
+     */
+    const {
+      data: profile,
+      error: profileError,
+    } = await supabase
+      .from('profiles')
+      .select(
+        'id, role, status'
+      )
+      .eq(
+        'id',
+        user.id
+      )
+      .maybeSingle();
+
+    if (profileError) {
+      console.error(
+        'Apply member profile error:',
+        profileError.message
+      );
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Gagal membaca data profil: ' +
+            profileError.message,
         },
         {
           status: 500,
@@ -74,12 +140,16 @@ export async function POST() {
       );
     }
 
+    /*
+     * Profil harus sudah dibuat ketika
+     * proses login selesai.
+     */
     if (!profile) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            'Profil akun belum ditemukan. Logout lalu login kembali agar profil dibuat.',
+            'Profil akun belum ditemukan. Logout lalu login kembali.',
         },
         {
           status: 404,
@@ -87,15 +157,21 @@ export async function POST() {
       );
     }
 
-    // Staff dan Guild Master tidak perlu mengajukan member.
+    /*
+     * Staff dan Guild Master tidak perlu
+     * mengajukan Member.
+     */
     if (
-      profile.role === 'officer' ||
-      profile.role === 'guild_master'
+      profile.role ===
+        'officer' ||
+      profile.role ===
+        'guild_master'
     ) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Akun Staff atau Guild Master tidak perlu mengajukan Member.',
+          error:
+            'Akun Staff atau Guild Master tidak perlu mengajukan Member.',
         },
         {
           status: 400,
@@ -103,15 +179,26 @@ export async function POST() {
       );
     }
 
-    // Jika sudah menjadi Member, jangan ajukan ulang.
+    /*
+     * Member yang sudah disetujui
+     * tidak boleh mengajukan ulang.
+     */
     if (
-      profile.role === 'member' &&
-      profile.status === 'approved'
+      profile.role ===
+        'member' &&
+      [
+        'approved',
+        'active',
+        'member',
+      ].includes(
+        profile.status
+      )
     ) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Akun kamu sudah menjadi Member.',
+          error:
+            'Akun kamu sudah menjadi Member.',
         },
         {
           status: 400,
@@ -119,12 +206,18 @@ export async function POST() {
       );
     }
 
-    // Jika sudah pending, jangan membuat pengajuan ganda.
-    if (profile.status === 'pending') {
+    /*
+     * Cegah pengajuan ganda.
+     */
+    if (
+      profile.status ===
+      'pending'
+    ) {
       return NextResponse.json(
         {
           ok: false,
-          error: 'Pengajuan Member kamu masih menunggu persetujuan Staff.',
+          error:
+            'Pengajuan Member kamu masih menunggu persetujuan Staff.',
         },
         {
           status: 400,
@@ -132,24 +225,48 @@ export async function POST() {
       );
     }
 
-    // Ubah status Guest menjadi Pending.
-    const { data: updatedProfile, error: updateError } = await supabase
+    /*
+     * Ubah status akun:
+     *
+     * guest → pending
+     *
+     * Role tetap guest sampai Staff
+     * menyetujui pengajuan.
+     */
+    const {
+      data: updatedProfile,
+      error: updateError,
+    } = await supabase
       .from('profiles')
       .update({
-        status: 'pending',
-        updated_at: new Date().toISOString(),
+        status:
+          'pending',
+
+        updated_at:
+          new Date()
+            .toISOString(),
       })
-      .eq('id', user.id)
-      .select('id, role, status')
+      .eq(
+        'id',
+        user.id
+      )
+      .select(
+        'id, role, status'
+      )
       .single();
 
     if (updateError) {
-      console.error('Apply member update error:', updateError.message);
+      console.error(
+        'Apply member update error:',
+        updateError.message
+      );
 
       return NextResponse.json(
         {
           ok: false,
-          error: `Gagal mengirim pengajuan Member: ${updateError.message}`,
+          error:
+            'Gagal mengirim pengajuan Member: ' +
+            updateError.message,
         },
         {
           status: 500,
@@ -157,24 +274,35 @@ export async function POST() {
       );
     }
 
+    /*
+     * Pengajuan berhasil.
+     */
     return NextResponse.json(
       {
         ok: true,
+
         message:
           'Pengajuan Member berhasil dikirim. Menunggu persetujuan Staff.',
-        profile: updatedProfile,
+
+        profile:
+          updatedProfile,
       },
       {
         status: 200,
       }
     );
   } catch (error) {
-    console.error('Apply member unexpected error:', error);
+    console.error(
+      'Apply member unexpected error:',
+      error
+    );
 
     return NextResponse.json(
       {
         ok: false,
-        error: 'Terjadi kesalahan pada server.',
+
+        error:
+          'Terjadi kesalahan pada server.',
       },
       {
         status: 500,
