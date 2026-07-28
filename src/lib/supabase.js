@@ -15,12 +15,7 @@ export const supabase = createClient(
   {
     auth: {
       /*
-       * Gunakan implicit flow karena provider saat ini
-       * mengembalikan access_token pada URL hash.
-       */
-      flowType: 'implicit',
-
-      /*
+       * PKCE flow (default) — kompatibel dengan Google & Discord OAuth.
        * Supabase akan membaca access_token dan refresh_token
        * dari URL secara otomatis.
        */

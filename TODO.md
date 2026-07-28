@@ -21,3 +21,11 @@
 - [ ] Test login flow
 - [ ] Test semua halaman
 
+## 🔧 Fix Login Google (26 Jul 2025)
+- [x] `src/lib/supabase.js` — Hapus `flowType: 'implicit'`, biarkan PKCE default (kompatibel Google & Discord)
+- [x] `src/app/auth/callback/page.js` — Ganti delay 1 detik + getSession() dengan dual approach:
+  - `getSession()` langsung untuk Discord (token dari URL hash)
+  - `onAuthStateChange` listener untuk Google (PKCE exchange)
+  - Timeout 15 detik sebagai fallback safety
+- [ ] ⚠️ **WAJIB**: Aktifkan Google provider di Supabase Dashboard → Authentication → Providers → Google → masukkan Client ID & Client Secret dari Google Cloud Console
+

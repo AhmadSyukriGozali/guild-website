@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -11,194 +11,168 @@ export default function AuthCallbackPage() {
     'Memproses data login...'
   );
 
-  useEffect(() => {
-    let active = true;
+  const processedRef = useRef(false);
 
-    async function handleCallback() {
-      try {
-        setMessage('Menunggu sesi login...');
+  /*
+   * Handler untuk membuat / memperbarui profil setelah session didapat.
+   */
+  const handleUserProfile = useCallback(async (user) => {
+    setMessage('Menyiapkan profil pengguna...');
 
-        /*
-         * Tunggu Supabase membaca token OAuth dari URL.
-         */
-        await new Promise((resolve) => {
-          setTimeout(resolve, 1000);
-        });
+    const fullName =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.user_metadata?.user_name ||
+      user.email?.split('@')[0] ||
+      'User';
 
-        /*
-         * Ambil session yang sudah diproses otomatis
-         * oleh detectSessionInUrl.
-         */
-        const {
-          data: sessionData,
-          error: sessionError,
-        } = await supabase.auth.getSession();
+    const username =
+      user.user_metadata?.preferred_username ||
+      user.user_metadata?.user_name ||
+      user.user_metadata?.name ||
+      user.email?.split('@')[0] ||
+      'User';
 
-        if (sessionError) {
-          console.error(
-            'Gagal mengambil session:',
-            sessionError
-          );
+    const avatarUrl =
+      user.user_metadata?.avatar_url ||
+      user.user_metadata?.picture ||
+      '';
 
-          throw new Error(
-            'Session Supabase tidak dapat dibaca.'
-          );
-        }
+    const provider =
+      user.app_metadata?.provider ||
+      'unknown';
 
-        const session = sessionData?.session;
+    /*
+     * Cek profil pengguna.
+     */
+    const {
+      data: existingProfile,
+      error: checkError,
+    } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
 
-        if (!session) {
-          console.error(
-            'Session kosong setelah callback.'
-          );
+    if (checkError) {
+      console.error(
+        'Gagal memeriksa profil:',
+        checkError
+      );
+    }
 
-          console.log(
-            'URL callback:',
-            window.location.href
-          );
-
-          throw new Error(
-            'Session login tidak ditemukan.'
-          );
-        }
-
-        const user = session.user;
-
-        setMessage('Menyiapkan profil pengguna...');
-
-        const fullName =
-          user.user_metadata?.full_name ||
-          user.user_metadata?.name ||
-          user.user_metadata?.user_name ||
-          user.email?.split('@')[0] ||
-          'User';
-
-        const username =
-          user.user_metadata?.preferred_username ||
-          user.user_metadata?.user_name ||
-          user.user_metadata?.name ||
-          user.email?.split('@')[0] ||
-          'User';
-
-        const avatarUrl =
-          user.user_metadata?.avatar_url ||
-          user.user_metadata?.picture ||
-          '';
-
-        const provider =
-          user.app_metadata?.provider ||
-          'unknown';
-
-        /*
-         * Cek profil pengguna.
-         */
-        const {
-          data: existingProfile,
-          error: checkError,
-        } = await supabase
+    /*
+     * Buat profil baru jika belum ada.
+     */
+    if (!existingProfile) {
+      const { error: insertError } =
+        await supabase
           .from('profiles')
-          .select('id')
-          .eq('id', user.id)
-          .maybeSingle();
+          .insert({
+            id: user.id,
+            username,
+            full_name: fullName,
+            avatar_url: avatarUrl,
+            email: user.email || '',
+            provider,
+            role: 'guest',
+            status: 'guest',
+            joined_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
 
-        if (checkError) {
-          console.error(
-            'Gagal memeriksa profil:',
-            checkError
-          );
-        }
-
-        /*
-         * Buat profil baru jika belum ada.
-         */
-        if (!existingProfile) {
-          const { error: insertError } =
-            await supabase
-              .from('profiles')
-              .insert({
-                id: user.id,
-                username,
-                full_name: fullName,
-                avatar_url: avatarUrl,
-                email: user.email || '',
-                provider,
-                role: 'guest',
-                status: 'guest',
-                joined_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-
-          if (insertError) {
-            console.error(
-              'Gagal membuat profil:',
-              insertError
-            );
-          }
-        }
-
-        /*
-         * Perbarui data profil jika sudah ada.
-         */
-        if (existingProfile) {
-          const { error: updateError } =
-            await supabase
-              .from('profiles')
-              .update({
-                username,
-                full_name: fullName,
-                avatar_url: avatarUrl,
-                email: user.email || '',
-                provider,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', user.id);
-
-          if (updateError) {
-            console.error(
-              'Gagal memperbarui profil:',
-              updateError
-            );
-          }
-        }
-
-        if (!active) {
-          return;
-        }
-
-        setMessage(
-          'Login berhasil. Membuka dashboard...'
-        );
-
-        await new Promise((resolve) => {
-          setTimeout(resolve, 500);
-        });
-
-        router.replace('/dashboard');
-
-      } catch (error) {
+      if (insertError) {
         console.error(
-          'Callback login gagal:',
-          error
+          'Gagal membuat profil:',
+          insertError
         );
+      }
+    }
 
-        if (!active) {
-          return;
+    /*
+     * Perbarui data profil jika sudah ada.
+     */
+    if (existingProfile) {
+      const { error: updateError } =
+        await supabase
+          .from('profiles')
+          .update({
+            username,
+            full_name: fullName,
+            avatar_url: avatarUrl,
+            email: user.email || '',
+            provider,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+
+      if (updateError) {
+        console.error(
+          'Gagal memperbarui profil:',
+          updateError
+        );
+      }
+    }
+
+    setMessage(
+      'Login berhasil. Membuka dashboard...'
+    );
+
+    setTimeout(() => {
+      router.replace('/dashboard');
+    }, 500);
+  }, [router]);
+
+  useEffect(() => {
+    /*
+     * 1. Coba langsung ambil session (untuk Discord yang pakai implicit/hash).
+     */
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && !processedRef.current) {
+        processedRef.current = true;
+        handleUserProfile(session.user);
+      }
+    });
+
+    /*
+     * 2. Listener untuk menangkap session event (PKCE flow untuk Google).
+     */
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (
+          (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') &&
+          session?.user &&
+          !processedRef.current
+        ) {
+          processedRef.current = true;
+          handleUserProfile(session.user);
         }
+      }
+    );
 
+    /*
+     * 3. Cleanup: jika dalam 15 detik tidak ada session, redirect ke login.
+     */
+    const timeout = setTimeout(() => {
+      if (!processedRef.current) {
+        console.warn(
+          'Callback timeout — tidak ada session dalam 15 detik.'
+        );
+        console.log('URL callback:', window.location.href);
+        processedRef.current = true;
         router.replace(
           `/login?error=${encodeURIComponent(
             'Data login tidak ditemukan. Silakan login kembali.'
           )}`
         );
       }
-    }
-
-    handleCallback();
+    }, 15000);
 
     return () => {
-      active = false;
+      authListener?.subscription?.unsubscribe();
+      clearTimeout(timeout);
     };
-  }, [router]);
+  }, [router, handleUserProfile]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 p-4 text-slate-100">
