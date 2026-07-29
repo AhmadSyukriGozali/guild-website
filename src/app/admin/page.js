@@ -140,7 +140,10 @@ export default function AdminPage() {
     router.replace('/login');
   }
   async function refreshPendingMembers() {
-    await loadPendingMembers();
+    await Promise.all([
+      loadPendingMembers(),
+      loadMembers(),
+    ]);
   }
 
   if (loading) {
@@ -178,9 +181,12 @@ export default function AdminPage() {
         />
         <div className="mt-8">
 
-          <PendingMembersCard
-            members={pendingMembers}
-            onRefresh={refreshPendingMembers}
+          <MemberManagementCard
+            members={members}
+            onRefresh={async () => {
+              await loadMembers();
+              await loadPendingMembers();
+            }}
           />
 
         </div>
