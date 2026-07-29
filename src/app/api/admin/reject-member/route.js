@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createActivityLog } from '@/lib/activity-log';
 
 export async function POST(request) {
   try {
@@ -26,6 +27,19 @@ export async function POST(request) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
+    const { data: member } = await supabaseAdmin
+      .from('profiles')
+      .select('username')
+      .eq('id', userId)
+      .single();
+
+    await createActivityLog({
+      adminId: null,
+      action: 'REJECT_MEMBER',
+      targetType: 'profiles',
+      targetId: userId,
+      description: `Member ${member?.username} ditolak.`,
+    });
 
     if (error) {
       console.error(error);

@@ -11,7 +11,7 @@ import GuildSettingsCard from '@/components/admin/GuildSettingsCard';
 import PendingMembersCard from '@/components/admin/PendingMembersCard';
 import MemberManagementCard from '@/components/admin/MemberManagementCard';
 import DashboardStats from '@/components/admin/DashboardStats';
-import useAdmin from '@/hooks/useAdmin';
+import ActivityLogsCard from '@/components/admin/ActivityLogsCard';
 
 import { supabase } from '@/lib/supabase';
 
@@ -27,15 +27,18 @@ export default function AdminPage() {
   const [pendingMembers, setPendingMembers] = useState([]);
 
   const [members, setMembers] = useState([]);
-  
+
   const [stats, setStats] = useState({
-    totalMembers: 0,
-    activeMembers: 0,
-    pendingMembers: 0,
+    members: 0,
+    pending: 0,
     officers: 0,
     guildMasters: 0,
-    bannedMembers: 0,
+    bosses: 0,
+    kills: 0,
+    loots: 0,
   });
+
+  const [logs, setLogs] = useState([]);
 
   const [message, setMessage] = useState({
     type: '',
@@ -59,11 +62,12 @@ export default function AdminPage() {
         return;
       }
 
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
+      const { data: profileData, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
 
       if (profileError || !profileData) {
         router.replace('/dashboard');
@@ -80,9 +84,14 @@ export default function AdminPage() {
 
       setProfile(profileData);
 
-      await loadSettings();
+      await Promise.all([
+        loadSettings(),
+        loadPendingMembers(),
+        loadDashboardStats(),
+        loadActivityLogs(),
+        loadMembers(),
+      ]);
 
-      await loadPendingMembers();
     } catch (err) {
       console.error(err);
 
@@ -90,6 +99,7 @@ export default function AdminPage() {
         type: 'error',
         text: 'Gagal memuat Admin Panel.',
       });
+
     } finally {
       setLoading(false);
     }
@@ -144,7 +154,7 @@ export default function AdminPage() {
       );
     }
   }
-  
+
   async function loadDashboardStats() {
 
     try {
@@ -166,7 +176,29 @@ export default function AdminPage() {
     }
 
   }
-  
+
+  async function loadActivityLogs() {
+
+    try {
+
+      const res = await fetch('/api/admin/activity-logs');
+
+      const result = await res.json();
+
+      if (!res.ok || !result.ok) {
+        return;
+      }
+
+      setLogs(result.logs || []);
+
+    } catch (err) {
+
+      console.error(err);
+
+    }
+
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut();
 
@@ -176,7 +208,6 @@ export default function AdminPage() {
     await Promise.all([
       loadPendingMembers(),
       loadMembers(),
-      loadDashboardStats(),
     ]);
   }
 
@@ -191,6 +222,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex">
+
       <Sidebar userProfile={profile} />
 
       <main className="flex-1 p-8">
@@ -199,24 +231,46 @@ export default function AdminPage() {
           profile={profile}
           onLogout={handleLogout}
         />
-        <DashboardStats stats={stats} />  
+
+        <DashboardStats stats={stats} />
+        
+        <div className="mt-8">
+          <ActivityLogsCard logs={logs} />
+        </div>
 
         <MessageAlert message={message} />
 
-        <GuildSettingsCard />
+        <div className="mt-8">
+          <GuildSettingsCard
+            settings={settings}
+            onSaved={(newSettings) => {
+              setSettings(newSettings);
+            }}
+          />
+        </div>
 
         <div className="mt-8">
+          <PendingMembersCard
+            members={pendingMembers}
+            onRefresh={refreshPendingMembers}
+          />
+        </div>
 
+        <div className="mt-8">
           <MemberManagementCard
             members={members}
             onRefresh={async () => {
-              await loadMembers();
-              await loadPendingMembers();
+              await Promise.all([
+                loadMembers(),
+                loadPendingMembers(),
+                loadDashboardStats(),
+              ]);
             }}
           />
-
         </div>
+
       </main>
+
     </div>
   );
 }
