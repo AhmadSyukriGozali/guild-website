@@ -8,6 +8,7 @@ import LoadingScreen from '@/components/admin/LoadingScreen';
 import AdminHeader from '@/components/admin/AdminHeader';
 import MessageAlert from '@/components/admin/MessageAlert';
 import GuildSettingsCard from '@/components/admin/GuildSettingsCard';
+import PendingMembersCard from '@/components/admin/PendingMembersCard';
 
 import { supabase } from '@/lib/supabase';
 
@@ -109,6 +110,9 @@ export default function AdminPage() {
 
     router.replace('/login');
   }
+  async function refreshPendingMembers() {
+    await loadPendingMembers();
+  }
 
   if (loading) {
     return (
@@ -143,7 +147,14 @@ export default function AdminPage() {
             });
           }}
         />
+        <div className="mt-8">
 
+          <PendingMembersCard
+            members={pendingMembers}
+            onRefresh={refreshPendingMembers}
+          />
+
+        </div>
       </main>
     </div>
   );
