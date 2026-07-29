@@ -9,6 +9,7 @@ import AdminHeader from '@/components/admin/AdminHeader';
 import MessageAlert from '@/components/admin/MessageAlert';
 import GuildSettingsCard from '@/components/admin/GuildSettingsCard';
 import PendingMembersCard from '@/components/admin/PendingMembersCard';
+import MemberManagementCard from '@/components/admin/MemberManagementCard';
 
 import { supabase } from '@/lib/supabase';
 
@@ -22,6 +23,8 @@ export default function AdminPage() {
   const [settings, setSettings] = useState(null);
 
   const [pendingMembers, setPendingMembers] = useState([]);
+
+  const [members, setMembers] = useState([]);
 
   const [message, setMessage] = useState({
     type: '',
@@ -103,6 +106,32 @@ export default function AdminPage() {
     }
 
     setPendingMembers(result.members);
+  }
+
+  async function loadMembers() {
+    try {
+      const res = await fetch('/api/admin/get-members');
+
+      const result = await res.json();
+
+      if (!res.ok || !result.ok) {
+        showMessage(
+          'error',
+          result.error || 'Gagal mengambil data member.'
+        );
+        return;
+      }
+
+      setMembers(result.members || []);
+
+    } catch (err) {
+      console.error(err);
+
+      showMessage(
+        'error',
+        'Gagal mengambil data member.'
+      );
+    }
   }
 
   async function handleLogout() {
