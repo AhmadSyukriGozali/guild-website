@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createActivityLog } from '@/lib/activity-log';
 
 export async function POST(request) {
   try {
@@ -23,6 +24,38 @@ export async function POST(request) {
       );
     }
 
+    if (!role) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Role wajib dikirim.',
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    // Ambil data member lama
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, username, email, role, status')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Member tidak ditemukan.',
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    // Update role
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -33,6 +66,8 @@ export async function POST(request) {
       .eq('id', userId);
 
     if (error) {
+      console.error(error);
+
       return NextResponse.json(
         {
           ok: false,
@@ -44,9 +79,20 @@ export async function POST(request) {
       );
     }
 
+    // Activity Log
+    await createActivityLog({
+      adminId: null,
+      action: 'update_member',
+      targetType: 'profiles',
+      targetId: userId,
+      description:
+        `${profile.username || profile.email} : ` +
+        `${profile.role} → ${role}`,
+    });
+
     return NextResponse.json({
       ok: true,
-      message: 'Member berhasil diperbarui.',
+      message: 'Role member berhasil diperbarui.',
     });
 
   } catch (err) {

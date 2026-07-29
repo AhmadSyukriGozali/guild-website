@@ -16,6 +16,7 @@ import ActivityLogsCard from '@/components/admin/ActivityLogsCard';
 import { supabase } from '@/lib/supabase';
 
 export default function AdminPage() {
+
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -28,6 +29,8 @@ export default function AdminPage() {
 
   const [members, setMembers] = useState([]);
 
+  const [logs, setLogs] = useState([]);
+
   const [stats, setStats] = useState({
     members: 0,
     pending: 0,
@@ -37,8 +40,6 @@ export default function AdminPage() {
     kills: 0,
     loots: 0,
   });
-
-  const [logs, setLogs] = useState([]);
 
   const [message, setMessage] = useState({
     type: '',
@@ -50,7 +51,9 @@ export default function AdminPage() {
   }, []);
 
   async function initialize() {
+
     try {
+
       setLoading(true);
 
       const {
@@ -62,14 +65,13 @@ export default function AdminPage() {
         return;
       }
 
-      const { data: profileData, error: profileError } =
-        await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
 
-      if (profileError || !profileData) {
+      if (!profileData) {
         router.replace('/dashboard');
         return;
       }
@@ -84,15 +86,10 @@ export default function AdminPage() {
 
       setProfile(profileData);
 
-      await Promise.all([
-        loadSettings(),
-        loadPendingMembers(),
-        loadDashboardStats(),
-        loadActivityLogs(),
-        loadMembers(),
-      ]);
+      await refreshAll();
 
     } catch (err) {
+
       console.error(err);
 
       setMessage({
@@ -101,126 +98,108 @@ export default function AdminPage() {
       });
 
     } finally {
+
       setLoading(false);
+
     }
   }
 
   async function loadSettings() {
+
     const res = await fetch('/api/admin/settings');
 
     const result = await res.json();
 
-    if (!res.ok || !result.ok) {
-      throw new Error(result.error);
+    if (result.ok) {
+      setSettings(result.settings);
     }
 
-    setSettings(result.settings);
+  }
+
+  async function loadMembers() {
+
+    const res = await fetch('/api/admin/get-members');
+
+    const result = await res.json();
+
+    if (result.ok) {
+      setMembers(result.members || []);
+    }
+
   }
 
   async function loadPendingMembers() {
+
     const res = await fetch('/api/admin/get-pending-members');
 
     const result = await res.json();
 
-    if (!res.ok || !result.ok) {
-      throw new Error(result.error);
+    if (result.ok) {
+      setPendingMembers(result.members || []);
     }
 
-    setPendingMembers(result.members);
-  }
-
-  async function loadMembers() {
-    try {
-      const res = await fetch('/api/admin/get-members');
-
-      const result = await res.json();
-
-      if (!res.ok || !result.ok) {
-        showMessage(
-          'error',
-          result.error || 'Gagal mengambil data member.'
-        );
-        return;
-      }
-
-      setMembers(result.members || []);
-
-    } catch (err) {
-      console.error(err);
-
-      showMessage(
-        'error',
-        'Gagal mengambil data member.'
-      );
-    }
   }
 
   async function loadDashboardStats() {
 
-    try {
+    const res = await fetch('/api/admin/dashboard-stats');
 
-      const res = await fetch('/api/admin/dashboard-stats');
+    const result = await res.json();
 
-      const result = await res.json();
-
-      if (!res.ok || !result.ok) {
-        return;
-      }
-
+    if (result.ok) {
       setStats(result.stats);
-
-    } catch (err) {
-
-      console.error(err);
-
     }
 
   }
 
   async function loadActivityLogs() {
 
-    try {
+    const res = await fetch('/api/admin/activity-logs');
 
-      const res = await fetch('/api/admin/activity-logs');
+    const result = await res.json();
 
-      const result = await res.json();
-
-      if (!res.ok || !result.ok) {
-        return;
-      }
-
+    if (result.ok) {
       setLogs(result.logs || []);
-
-    } catch (err) {
-
-      console.error(err);
-
     }
 
   }
 
+  async function refreshAll() {
+
+    await Promise.all([
+      loadSettings(),
+      loadMembers(),
+      loadPendingMembers(),
+      loadDashboardStats(),
+      loadActivityLogs(),
+    ]);
+
+  }
+
   async function handleLogout() {
+
     await supabase.auth.signOut();
 
     router.replace('/login');
-  }
-  async function refreshPendingMembers() {
-    await Promise.all([
-      loadPendingMembers(),
-      loadMembers(),
-    ]);
+
   }
 
   if (loading) {
+
     return (
       <div className="min-h-screen bg-slate-950 flex">
+
         <Sidebar userProfile={profile} />
+
         <LoadingScreen text="Memuat Admin Panel..." />
+
       </div>
     );
+
   }
 
   return (
+
     <div className="min-h-screen bg-slate-950 flex">
 
       <Sidebar userProfile={profile} />
@@ -232,45 +211,50 @@ export default function AdminPage() {
           onLogout={handleLogout}
         />
 
-        <DashboardStats stats={stats} />
-        
-        <div className="mt-8">
-          <ActivityLogsCard logs={logs} />
+        <div className="mt-6">
+
+          <DashboardStats stats={stats} />
+
         </div>
 
         <MessageAlert message={message} />
 
-        <div className="mt-8">
+        <div className="grid lg:grid-cols-2 gap-6 mt-6">
+
           <GuildSettingsCard
             settings={settings}
-            onSaved={(newSettings) => {
-              setSettings(newSettings);
-            }}
+            onSaved={refreshAll}
           />
-        </div>
 
-        <div className="mt-8">
           <PendingMembersCard
             members={pendingMembers}
-            onRefresh={refreshPendingMembers}
+            onRefresh={refreshAll}
           />
+
         </div>
 
-        <div className="mt-8">
+        <div className="mt-6">
+
           <MemberManagementCard
             members={members}
-            onRefresh={async () => {
-              await Promise.all([
-                loadMembers(),
-                loadPendingMembers(),
-                loadDashboardStats(),
-              ]);
-            }}
+            onRefresh={refreshAll}
           />
+
+        </div>
+
+        <div className="mt-6">
+
+          <ActivityLogsCard
+            logs={logs}
+            onRefresh={refreshAll}
+          />
+
         </div>
 
       </main>
 
     </div>
+
   );
+
 }

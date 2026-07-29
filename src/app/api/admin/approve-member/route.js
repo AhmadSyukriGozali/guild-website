@@ -19,6 +19,26 @@ export async function POST(request) {
       );
     }
 
+    // Ambil data user terlebih dahulu
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, username, email')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Member tidak ditemukan.',
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    // Update role
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -27,20 +47,6 @@ export async function POST(request) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
-
-    const { data: member } = await supabaseAdmin
-      .from('profiles')
-      .select('username')
-      .eq('id', userId)
-      .single();
-
-    await createActivityLog({
-      adminId: null,
-      action: 'APPROVE_MEMBER',
-      targetType: 'profiles',
-      targetId: userId,
-      description: `Member ${member?.username} telah disetujui.`,
-    });
 
     if (error) {
       console.error(error);
@@ -56,10 +62,20 @@ export async function POST(request) {
       );
     }
 
+    // Activity Log
+    await createActivityLog({
+      adminId: null,
+      action: 'approve_member',
+      targetType: 'profiles',
+      targetId: userId,
+      description: `Menyetujui member ${profile.username || profile.email}`,
+    });
+
     return NextResponse.json({
       ok: true,
       message: 'Member berhasil disetujui.',
     });
+
   } catch (err) {
     console.error(err);
 

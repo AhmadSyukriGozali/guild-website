@@ -19,6 +19,26 @@ export async function POST(request) {
       );
     }
 
+    // Ambil data member
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, username, email')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Member tidak ditemukan.',
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    // Update status
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
@@ -27,19 +47,6 @@ export async function POST(request) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
-    const { data: member } = await supabaseAdmin
-      .from('profiles')
-      .select('username')
-      .eq('id', userId)
-      .single();
-
-    await createActivityLog({
-      adminId: null,
-      action: 'REJECT_MEMBER',
-      targetType: 'profiles',
-      targetId: userId,
-      description: `Member ${member?.username} ditolak.`,
-    });
 
     if (error) {
       console.error(error);
@@ -55,10 +62,20 @@ export async function POST(request) {
       );
     }
 
+    // Simpan Activity Log
+    await createActivityLog({
+      adminId: null,
+      action: 'reject_member',
+      targetType: 'profiles',
+      targetId: userId,
+      description: `Menolak pengajuan member ${profile.username || profile.email}`,
+    });
+
     return NextResponse.json({
       ok: true,
       message: 'Pengajuan member berhasil ditolak.',
     });
+
   } catch (err) {
     console.error(err);
 

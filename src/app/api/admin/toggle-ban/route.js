@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { createActivityLog } from '@/lib/activity-log';
 
 export async function POST(request) {
   try {
@@ -18,35 +19,44 @@ export async function POST(request) {
       );
     }
 
-    // Ambil status ban saat ini
+    // Ambil data member
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('is_banned')
+      .select(`
+        id,
+        username,
+        email,
+        is_banned
+      `)
       .eq('id', userId)
       .single();
 
-    if (profileError) {
+    if (profileError || !profile) {
       return NextResponse.json(
         {
           ok: false,
-          error: profileError.message,
+          error: 'Member tidak ditemukan.',
         },
         {
-          status: 500,
+          status: 404,
         }
       );
     }
 
-    // Toggle ban
+    const newBanStatus = !profile.is_banned;
+
+    // Update status ban
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
-        is_banned: !profile.is_banned,
+        is_banned: newBanStatus,
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
 
     if (error) {
+      console.error(error);
+
       return NextResponse.json(
         {
           ok: false,
@@ -58,9 +68,23 @@ export async function POST(request) {
       );
     }
 
+    // Simpan Activity Log
+    await createActivityLog({
+      adminId: null,
+      action: newBanStatus ? 'ban_member' : 'unban_member',
+      targetType: 'profiles',
+      targetId: userId,
+      description: `${
+        newBanStatus ? 'Ban' : 'Unban'
+      } member ${profile.username || profile.email}`,
+    });
+
     return NextResponse.json({
       ok: true,
-      banned: !profile.is_banned,
+      banned: newBanStatus,
+      message: newBanStatus
+        ? 'Member berhasil diban.'
+        : 'Member berhasil di-unban.',
     });
 
   } catch (err) {

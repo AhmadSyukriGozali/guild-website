@@ -5,23 +5,34 @@ export async function createActivityLog({
   action,
   targetType = null,
   targetId = null,
-  description,
+  description = '',
 }) {
   try {
+    if (!action) {
+      console.error('Activity Log: action wajib diisi.');
+      return;
+    }
+
+    const payload = {
+      action,
+      target_type: targetType,
+      target_id: targetId,
+      description,
+    };
+
+    // hanya simpan admin_id jika ada
+    if (adminId) {
+      payload.admin_id = adminId;
+    }
+
     const { error } = await supabaseAdmin
       .from('activity_logs')
-      .insert({
-        admin_id: adminId,
-        action,
-        target_type: targetType,
-        target_id: targetId,
-        description,
-      });
+      .insert(payload);
 
     if (error) {
-      console.error('Activity Log:', error);
+      console.error('Activity Log Error:', error);
     }
   } catch (err) {
-    console.error('Activity Log:', err);
+    console.error('Activity Log Exception:', err);
   }
 }
