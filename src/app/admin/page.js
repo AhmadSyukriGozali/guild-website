@@ -1,49 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+
 import Sidebar from '@/components/Sidebar';
+import LoadingScreen from '@/components/admin/LoadingScreen';
+import AdminHeader from '@/components/admin/AdminHeader';
+import MessageAlert from '@/components/admin/MessageAlert';
+
 import { supabase } from '@/lib/supabase';
 
-import {
-  ShieldCheck,
-  KeyRound,
-  Lock,
-  Globe,
-  Save,
-  AlertTriangle,
-  CheckCircle2,
-  Users,
-  UserPlus,
-  Check,
-  X,
-  Clock,
-  Loader2,
-} from 'lucide-react';
+export default function AdminPage() {
+  const router = useRouter();
 
-export default function AdminPanelPage() {
   const [loading, setLoading] = useState(true);
 
   const [profile, setProfile] = useState(null);
 
-  const [guildName, setGuildName] = useState('');
+  const [settings, setSettings] = useState(null);
 
-  const [emergencyLock, setEmergencyLock] =
-    useState(false);
-
-  const [currentPasskey, setCurrentPasskey] =
-    useState('');
-
-  const [newPasskey, setNewPasskey] =
-    useState('');
-
-  const [confirmPasskey, setConfirmPasskey] =
-    useState('');
-
-  const [pendingMembers, setPendingMembers] =
-    useState([]);
-
-  const [approvingId, setApprovingId] =
-    useState(null);
+  const [pendingMembers, setPendingMembers] = useState([]);
 
   const [message, setMessage] = useState({
     type: '',
@@ -51,10 +27,10 @@ export default function AdminPanelPage() {
   });
 
   useEffect(() => {
-    loadPage();
+    initialize();
   }, []);
 
-  async function loadPage() {
+  async function initialize() {
     try {
       setLoading(true);
 
@@ -63,19 +39,18 @@ export default function AdminPanelPage() {
       } = await supabase.auth.getSession();
 
       if (!session?.user) {
-        window.location.href = '/login';
+        router.replace('/login');
         return;
       }
 
-      const { data: profileData } =
-        await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
 
-      if (!profileData) {
-        window.location.href = '/dashboard';
+      if (profileError || !profileData) {
+        router.replace('/dashboard');
         return;
       }
 
@@ -83,28 +58,13 @@ export default function AdminPanelPage() {
         profileData.role !== 'officer' &&
         profileData.role !== 'guild_master'
       ) {
-        window.location.href = '/dashboard';
+        router.replace('/dashboard');
         return;
       }
 
       setProfile(profileData);
 
-      const { data: settingData } =
-        await supabase
-          .from('app_settings')
-          .select('*')
-          .eq('id', 1)
-          .single();
-
-      if (settingData) {
-        setGuildName(
-          settingData.guild_name || ''
-        );
-
-        setEmergencyLock(
-          settingData.emergency_lock || false
-        );
-      }
+      await loadSettings();
 
       await loadPendingMembers();
     } catch (err) {
@@ -112,212 +72,95 @@ export default function AdminPanelPage() {
 
       setMessage({
         type: 'error',
-        text: 'Gagal memuat data admin.',
+        text: 'Gagal memuat Admin Panel.',
       });
     } finally {
       setLoading(false);
     }
   }
 
+  async function loadSettings() {
+    const res = await fetch('/api/admin/settings');
+
+    const result = await res.json();
+
+    if (!res.ok || !result.ok) {
+      throw new Error(result.error);
+    }
+
+    setSettings(result.settings);
+  }
+
   async function loadPendingMembers() {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('status', 'pending')
-      .order('updated_at', {
-        ascending: false,
-      });
+    const res = await fetch('/api/admin/get-pending-members');
 
-    setPendingMembers(data || []);
+    const result = await res.json();
+
+    if (!res.ok || !result.ok) {
+      throw new Error(result.error);
+    }
+
+    setPendingMembers(result.members);
   }
 
-  function showMessage(type, text) {
-    setMessage({
-      type,
-      text,
-    });
+  async function handleLogout() {
+    await supabase.auth.signOut();
 
-    setTimeout(() => {
-      setMessage({
-        type: '',
-        text: '',
-      });
-    }, 3000);
-  }
-  async function handleUpdatePasskey(e) {
-    e.preventDefault();
-
-    if (!newPasskey || !confirmPasskey) {
-      showMessage(
-        'error',
-        'Semua kolom passkey wajib diisi.'
-      );
-      return;
-    }
-
-    if (newPasskey !== confirmPasskey) {
-      showMessage(
-        'error',
-        'Konfirmasi passkey tidak sama.'
-      );
-      return;
-    }
-
-    const { error } = await supabase
-      .from('app_settings')
-      .update({
-        master_passkey_hash: newPasskey,
-        updated_at: new Date().toISOString(),
-        updated_by: profile.id,
-      })
-      .eq('id', 1);
-
-    if (error) {
-      showMessage(
-        'error',
-        error.message
-      );
-      return;
-    }
-
-    setCurrentPasskey('');
-    setNewPasskey('');
-    setConfirmPasskey('');
-
-    showMessage(
-      'success',
-      'Master Passkey berhasil diperbarui.'
-    );
-  }
-
-  async function handleSaveGuildName() {
-    const { error } = await supabase
-      .from('app_settings')
-      .update({
-        guild_name: guildName,
-        updated_at: new Date().toISOString(),
-        updated_by: profile.id,
-      })
-      .eq('id', 1);
-
-    if (error) {
-      showMessage(
-        'error',
-        error.message
-      );
-      return;
-    }
-
-    showMessage(
-      'success',
-      'Nama Guild berhasil diperbarui.'
-    );
-  }
-
-  async function handleToggleLock() {
-    const newValue = !emergencyLock;
-
-    const { error } = await supabase
-      .from('app_settings')
-      .update({
-        emergency_lock: newValue,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', 1);
-
-    if (error) {
-      showMessage(
-        'error',
-        error.message
-      );
-      return;
-    }
-
-    setEmergencyLock(newValue);
-
-    showMessage(
-      'success',
-      newValue
-        ? 'Emergency Lock diaktifkan.'
-        : 'Emergency Lock dimatikan.'
-    );
-  }
-
-  async function approveMember(member) {
-    setApprovingId(member.id);
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        role: 'member',
-        status: 'active',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', member.id);
-
-    setApprovingId(null);
-
-    if (error) {
-      showMessage(
-        'error',
-        error.message
-      );
-      return;
-    }
-
-    showMessage(
-      'success',
-      `${member.username} berhasil disetujui.`
-    );
-
-    loadPendingMembers();
-  }
-
-  async function rejectMember(member) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        status: 'rejected',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', member.id);
-
-    if (error) {
-      showMessage(
-        'error',
-        error.message
-      );
-      return;
-    }
-
-    showMessage(
-      'success',
-      `${member.username} ditolak.`
-    );
-
-    loadPendingMembers();
+    router.replace('/login');
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex">
         <Sidebar userProfile={profile} />
+        <LoadingScreen text="Memuat Admin Panel..." />
+      </div>
+    );
+  }
 
-        <div className="flex-1 flex justify-center items-center">
+  return (
+    <div className="min-h-screen bg-slate-950 flex">
+      <Sidebar userProfile={profile} />
 
-          <div className="flex items-center gap-3">
+      <main className="flex-1 p-8">
 
-            <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+        <AdminHeader
+          profile={profile}
+          onLogout={handleLogout}
+        />
 
-            <p className="text-slate-300">
-              Memuat Admin Panel...
+        <MessageAlert message={message} />
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
+          <h2 className="text-xl font-bold text-white">
+            Admin Panel
+          </h2>
+
+          <div className="mt-4 space-y-2 text-slate-300">
+
+            <p>
+              Guild :
+              {' '}
+              {settings?.guild_name}
+            </p>
+
+            <p>
+              Emergency Lock :
+              {' '}
+              {settings?.emergency_lock ? 'ON' : 'OFF'}
+            </p>
+
+            <p>
+              Pending Member :
+              {' '}
+              {pendingMembers.length}
             </p>
 
           </div>
 
         </div>
 
-      </div>
-    );
-  }
+      </main>
+    </div>
+  );
 }
