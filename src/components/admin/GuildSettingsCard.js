@@ -42,7 +42,7 @@ export default function GuildSettingsCard({
       const result = await res.json();
 
       if (!res.ok || !result.ok) {
-        alert(result.error);
+        (result.error);
         return;
       }
 
@@ -50,10 +50,10 @@ export default function GuildSettingsCard({
         onSaved(result.settings);
       }
 
-      alert('Pengaturan berhasil disimpan.');
+      ('Pengaturan berhasil disimpan.');
     } catch (err) {
       console.error(err);
-      alert('Terjadi kesalahan.');
+      ('Terjadi kesalahan.');
     } finally {
       setLoading(false);
     }
