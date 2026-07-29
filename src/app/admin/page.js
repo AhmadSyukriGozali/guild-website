@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar';
 import LoadingScreen from '@/components/admin/LoadingScreen';
 import AdminHeader from '@/components/admin/AdminHeader';
 import MessageAlert from '@/components/admin/MessageAlert';
+import GuildSettingsCard from '@/components/admin/GuildSettingsCard';
 
 import { supabase } from '@/lib/supabase';
 
@@ -131,34 +132,17 @@ export default function AdminPage() {
 
         <MessageAlert message={message} />
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-          <h2 className="text-xl font-bold text-white">
-            Admin Panel
-          </h2>
+        <GuildSettingsCard
+          settings={settings}
+          onSaved={(newSettings) => {
+            setSettings(newSettings);
 
-          <div className="mt-4 space-y-2 text-slate-300">
-
-            <p>
-              Guild :
-              {' '}
-              {settings?.guild_name}
-            </p>
-
-            <p>
-              Emergency Lock :
-              {' '}
-              {settings?.emergency_lock ? 'ON' : 'OFF'}
-            </p>
-
-            <p>
-              Pending Member :
-              {' '}
-              {pendingMembers.length}
-            </p>
-
-          </div>
-
-        </div>
+            setMessage({
+              type: 'success',
+              text: 'Pengaturan berhasil disimpan.',
+            });
+          }}
+        />
 
       </main>
     </div>
