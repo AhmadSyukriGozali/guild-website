@@ -10,6 +10,8 @@ import MessageAlert from '@/components/admin/MessageAlert';
 import GuildSettingsCard from '@/components/admin/GuildSettingsCard';
 import PendingMembersCard from '@/components/admin/PendingMembersCard';
 import MemberManagementCard from '@/components/admin/MemberManagementCard';
+import DashboardStats from '@/components/admin/DashboardStats';
+import useAdmin from '@/hooks/useAdmin';
 
 import { supabase } from '@/lib/supabase';
 
@@ -25,6 +27,15 @@ export default function AdminPage() {
   const [pendingMembers, setPendingMembers] = useState([]);
 
   const [members, setMembers] = useState([]);
+  
+  const [stats, setStats] = useState({
+    totalMembers: 0,
+    activeMembers: 0,
+    pendingMembers: 0,
+    officers: 0,
+    guildMasters: 0,
+    bannedMembers: 0,
+  });
 
   const [message, setMessage] = useState({
     type: '',
@@ -133,7 +144,29 @@ export default function AdminPage() {
       );
     }
   }
+  
+  async function loadDashboardStats() {
 
+    try {
+
+      const res = await fetch('/api/admin/dashboard-stats');
+
+      const result = await res.json();
+
+      if (!res.ok || !result.ok) {
+        return;
+      }
+
+      setStats(result.stats);
+
+    } catch (err) {
+
+      console.error(err);
+
+    }
+
+  }
+  
   async function handleLogout() {
     await supabase.auth.signOut();
 
@@ -143,6 +176,7 @@ export default function AdminPage() {
     await Promise.all([
       loadPendingMembers(),
       loadMembers(),
+      loadDashboardStats(),
     ]);
   }
 
@@ -165,20 +199,12 @@ export default function AdminPage() {
           profile={profile}
           onLogout={handleLogout}
         />
+        <DashboardStats stats={stats} />  
 
         <MessageAlert message={message} />
 
-        <GuildSettingsCard
-          settings={settings}
-          onSaved={(newSettings) => {
-            setSettings(newSettings);
+        <GuildSettingsCard />
 
-            setMessage({
-              type: 'success',
-              text: 'Pengaturan berhasil disimpan.',
-            });
-          }}
-        />
         <div className="mt-8">
 
           <MemberManagementCard
